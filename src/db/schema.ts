@@ -518,10 +518,10 @@ export const pipelineRuns = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     contentId: uuid("content_id").references(() => contentItems.id, {
-      onDelete: "cascade",
+      onDelete: "set null",
     }),
     digestId: uuid("digest_id").references(() => digestReports.id, {
-      onDelete: "cascade",
+      onDelete: "set null",
     }),
     pipelineName: varchar("pipeline_name", { length: 64 }).notNull(),
     pipelineVersion: varchar("pipeline_version", { length: 32 }).notNull(),
