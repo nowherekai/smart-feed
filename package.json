@@ -1,0 +1,16 @@
+{
+  "name": "smart-feed",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "check": "bunx tsc --noEmit",
+    "build": "bun build src/index.ts --outdir dist",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

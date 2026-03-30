@@ -1,0 +1,11 @@
+# CODEOWNERS
+# This file defines code ownership for automatic review requests.
+
+* @your-team
+
+# CI/CD configuration
+/.github/ @devops-team
+
+# Monorepo boundaries (optional)
+# /apps/ @app-team
+# /packages/ @platform-team
