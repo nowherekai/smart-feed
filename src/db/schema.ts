@@ -154,13 +154,14 @@ export const sources = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
     updatedAt: timestamp("updated_at", {
       withTimezone: true,
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date()),
   },
   (table) => ({
     sourceTypeIdentifierUnique: uniqueIndex("uniq_sources_type_identifier").on(
@@ -215,13 +216,14 @@ export const contentItems = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
     updatedAt: timestamp("updated_at", {
       withTimezone: true,
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date()),
   },
   (table) => ({
     contentSourceIdx: index("idx_content_items_source_id").on(table.sourceId),
@@ -266,13 +268,14 @@ export const contentItemRaws = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
     updatedAt: timestamp("updated_at", {
       withTimezone: true,
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date()),
   },
   (table) => ({
     rawContentUnique: uniqueIndex("uniq_content_item_raws_content_id").on(
@@ -320,7 +323,7 @@ export const analysisRecords = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
   },
   (table) => ({
     analysisContentIdx: index("idx_analysis_records_content_id").on(
@@ -368,13 +371,14 @@ export const digestReports = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
     updatedAt: timestamp("updated_at", {
       withTimezone: true,
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date())
+      .$onUpdate(() => new Date()),
     sentAt: timestamp("sent_at", {
       withTimezone: true,
       mode: "date",
@@ -407,7 +411,7 @@ export const digestItems = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
   },
   (table) => ({
     digestItemDigestIdx: index("idx_digest_items_digest_id").on(table.digestId),
@@ -435,7 +439,7 @@ export const feedbackSignals = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
   },
   (table) => ({
     feedbackTargetIdx: index("idx_feedback_signals_target").on(
@@ -472,7 +476,7 @@ export const sourceImportRuns = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
   },
   (table) => ({
     importRunStatusIdx: index("idx_source_import_runs_status").on(table.status),
@@ -501,7 +505,7 @@ export const sourceImportRunItems = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
   },
   (table) => ({
     importRunItemRunIdx: index("idx_source_import_run_items_import_run_id").on(
@@ -539,7 +543,7 @@ export const pipelineRuns = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
   },
   (table) => ({
     pipelineRunContentIdx: index("idx_pipeline_runs_content_id").on(
@@ -580,7 +584,7 @@ export const stepRuns = pgTable(
       mode: "date",
     })
       .notNull()
-      .defaultNow(),
+      .$defaultFn(() => new Date()),
   },
   (table) => ({
     stepRunPipelineIdx: index("idx_step_runs_pipeline_run_id").on(
