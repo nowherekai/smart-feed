@@ -1,34 +1,56 @@
-# dependencies (bun install)
-node_modules
+# 系统文件 (OS files)
+.DS_Store
 
-# output
-out
-dist
+# Node.js 相关 (dependencies & logs)
+node_modules/
+bun.lockb
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Bun / TypeScript 输出目录
+out/
+build/
+dist/
 *.tgz
 
-# code coverage
-coverage
-*.lcov
+# Python 相关
+.venv/
+__pycache__/
+.pytest_cache/
 
-# logs
-logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
-
-# dotenv environment variable files
+# 环境变量文件 (dotenv environment variable files)
 .env
+.env.local
 .env.development.local
 .env.test.local
 .env.production.local
-.env.local
 
-# caches
+# 其他日志文件 (other logs)
+logs/
+*.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# 代码覆盖率 (code coverage)
+coverage/
+*.lcov
+
+# 缓存 (caches)
 .eslintcache
 .cache
 *.tsbuildinfo
 
-# IntelliJ based IDEs
-.idea
+# IDEs
+.idea/
 
-# Finder (MacOS) folder config
-.DS_Store
+# AI Assistants
+.agents/
+.claude/
+.gemini/
+.codex/
+memory/
+
+# 个人习惯忽略的文件夹 (Custom folders)
+source/
+input/
+output/
