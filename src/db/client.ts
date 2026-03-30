@@ -5,7 +5,7 @@ import { databaseEnv } from "./env";
 import * as schema from "./schema";
 
 export const sqlClient = postgres(databaseEnv.databaseUrl, {
-  ssl: databaseEnv.databaseSsl ? "require" : undefined,
+  ssl: databaseEnv.databaseSsl ? "require" : false,
 });
 
 export const db = drizzle(sqlClient, { schema });
