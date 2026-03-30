@@ -1,9 +1,9 @@
 # smart-feed 系统架构文档
 
 **项目名称**: smart-feed
-**版本**: 0.1
+**版本**: 0.2
 **创建日期**: 2026-03-30
-**文档状态**: Draft
+**文档状态**: Ready for Implementation
 
 ---
 
@@ -11,7 +11,7 @@
 
 ### 1.1 系统定位
 
-smart-feed 是一个后台驱动的个人情报处理系统，将用户配置的 RSS 订阅源转化为每日可追溯的智能摘要。
+smart-feed 是一个个人情报处理系统，将用户配置的 RSS 订阅源转化为每日可追溯的智能摘要。
 
 ### 1.2 核心设计原则
 
@@ -26,13 +26,14 @@ smart-feed 是一个后台驱动的个人情报处理系统，将用户配置的
 
 | 层级 | 技术选型 | 说明 |
 |------|---------|------|
-| **Web 框架** | Next.js | 全栈框架，支持 SSR/API Routes |
+| **Web 框架** | Next.js | 全栈框架，支持 SSR/server actions/API Routes |
 | **样式** | Tailwind CSS | 实用优先的 CSS 框架 |
 | **UI 组件** | shadcn/ui | 可组合的 React 组件库 |
 | **包管理** | Bun | 快速的 JavaScript 运行时与包管理器 |
 | **数据库** | PostgreSQL | 本地开发用本地实例，生产用 Neon |
 | **ORM** | Drizzle ORM | 类型安全的 TypeScript ORM |
-| **任务队列** | pg-boss | 基于 PostgreSQL 的任务队列 |
+| **任务队列** | BullMQ + Redis | 基于 Redis 的任务队列与调度 |
+| **队列管理** | bull-board | 队列、重试、失败任务的可视化管理界面 |
 | **AI 适配** | Vercel AI SDK | 统一的 LLM 接口抽象层 |
 
 ---
@@ -44,7 +45,7 @@ smart-feed 是一个后台驱动的个人情报处理系统，将用户配置的
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      Next.js Web                        │
-│              来源管理 / Digest 查看 / 反馈               │
+│      来源管理 / Digest 查看 / 反馈 / bull-board 管理      │
 └────────────────────────┬────────────────────────────────┘
                          │ HTTP/API
                          ▼
@@ -55,10 +56,11 @@ smart-feed 是一个后台驱动的个人情报处理系统，将用户配置的
         │                                         │
         ▼                                         ▼
 ┌──────────────────┐                    ┌─────────────────┐
-│   PostgreSQL     │◄──────────────────►│    pg-boss      │
-│  数据持久化层     │                    │   任务队列       │
-└──────────────────┘                    └────────┬────────┘
-        ▲                                        │
+│   PostgreSQL     │                    │   Redis +       │
+│  数据持久化层     │                    │    BullMQ       │
+└──────────────────┘                    │  任务队列/调度    │
+        ▲                               └────────┬────────┘
+        │                                        │
         │                                        ▼
         │                              ┌─────────────────┐
         │                              │  Worker Pool    │
@@ -66,8 +68,7 @@ smart-feed 是一个后台驱动的个人情报处理系统，将用户配置的
         │                              └────────┬────────┘
         │                                       │
         └───────────────────────────────────────┘
-                         │
-                         ▼
+                         
 ┌─────────────────────────────────────────────────────────┐
 │                   External Systems                      │
 │            RSS Feeds / LLM APIs / SMTP                  │
@@ -87,21 +88,26 @@ smart-feed 是一个后台驱动的个人情报处理系统，将用户配置的
 - **关键接口**: 来源管理、Digest 查询、反馈提交
 
 #### 2.2.3 调度层
-- **职责**: 定时触发抓取与 Digest 生成
-- **实现**: pg-boss 定时任务
+- **职责**: 定时触发抓取信息与 Digest 生成
+- **实现**: BullMQ repeatable jobs / job scheduler
 - **触发规则**:
   - RSS 抓取: 每小时
   - Digest 生成: 每日 Digest 业务时区本地 08:00
 
 #### 2.2.4 Worker 层
 - **职责**: 执行 Pipeline 各阶段任务
-- **实现**: pg-boss Worker 进程
+- **实现**: BullMQ Worker 进程
 - **特性**: 幂等、可重试、并发控制
 
 #### 2.2.5 AI 适配层
 - **职责**: 统一 LLM 调用接口
 - **实现**: Vercel AI SDK
 - **策略**: 轻模型筛选 + 重模型摘要
+
+#### 2.2.6 队列管理层
+- **职责**: 查看队列积压、失败任务、重试状态与运行健康度
+- **实现**: bull-board，挂载到 Next.js 内部管理路由（如 `/admin/queues`）
+- **约束**: 仅单用户或内部管理员可访问，不对公网匿名开放
 
 ---
 
@@ -506,6 +512,8 @@ smart-feed/
 │   │   ├── page.tsx           # 首页
 │   │   ├── sources/           # 来源管理页面
 │   │   ├── digest/            # Digest 查看页面
+│   │   ├── admin/
+│   │   │   └── queues/        # bull-board 管理入口
 │   │   └── api/               # API Routes
 │   │       ├── sources/
 │   │       ├── digest/
@@ -515,7 +523,9 @@ smart-feed/
 │   │   │   ├── schema.ts
 │   │   │   └── client.ts
 │   │   ├── queue/            # 任务队列
-│   │   │   ├── jobs.ts
+│   │   │   ├── bullmq.ts
+│   │   │   ├── scheduler.ts
+│   │   │   ├── board.ts
 │   │   │   └── workers.ts
 │   │   ├── pipeline/         # Pipeline 实现
 │   │   │   ├── source-ingestion.ts
@@ -545,13 +555,16 @@ smart-feed/
 
 ## 8. 关键技术决策
 
-### 8.1 为什么选择 pg-boss？
+### 8.1 为什么选择 Redis + BullMQ + bull-board？
 
-- 基于 PostgreSQL，无需额外基础设施
-- 支持定时任务、重试、优先级
-- 适合中小规模任务处理
+- Redis 队列吞吐更高，适合抓取、清洗、分析这类 I/O 密集后台任务
+- BullMQ 原生支持延迟任务、重试、优先级、并发控制与 repeatable jobs
+- Worker 与 Web 可独立扩缩容，不会把任务压力压到 PostgreSQL
+- bull-board 可直接提供失败任务查看、手动重试与积压监控，降低运维成本
 
-**替代方案**: BullMQ (需要 Redis)
+**代价**:
+- 需要额外维护 Redis 基础设施
+- 需要处理 Redis 连接、持久化与队列监控
 
 ### 8.2 为什么选择 Vercel AI SDK？
 
@@ -662,13 +675,21 @@ services:
   web:
     command: bun run dev
     ports: ["3000:3000"]
+    environment:
+      - REDIS_URL=redis://redis:6379
 
   worker:
     command: bun run worker
+    environment:
+      - REDIS_URL=redis://redis:6379
 
   postgres:
     image: postgres:16
     ports: ["5432:5432"]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
 ```
 
 ### 11.2 生产环境
@@ -682,6 +703,7 @@ services:
     command: bun run start
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
       - AI_API_KEY=${AI_API_KEY}
       - SMART_FEED_TIME_WINDOW_HOURS=${SMART_FEED_TIME_WINDOW_HOURS}
       - SMART_FEED_TIMEZONE=${SMART_FEED_TIMEZONE}
@@ -694,6 +716,7 @@ services:
     command: bun run worker
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
       - AI_API_KEY=${AI_API_KEY}
       - SMART_FEED_TIME_WINDOW_HOURS=${SMART_FEED_TIME_WINDOW_HOURS}
       - SMART_FEED_TIMEZONE=${SMART_FEED_TIMEZONE}
@@ -705,10 +728,17 @@ services:
     image: postgres:16
     volumes:
       - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
 ```
 
 **云端方案**:
 - 数据库: Neon (PostgreSQL 托管)
+- Redis: Upstash / Redis Cloud / 云厂商托管 Redis
 - 应用: 任意支持 Docker 的平台
 - 邮件: SMTP 服务（如 SendGrid）
 
@@ -727,6 +757,7 @@ services:
 ### 12.2 访问控制
 
 - MVP 阶段无多用户，单用户模式
+- `bull-board` 仅允许内部管理入口访问，至少应加上基础鉴权或反向代理层访问限制
 - 未来扩展: 添加用户认证与授权
 
 ### 12.3 内容安全
@@ -750,6 +781,7 @@ services:
 | **Digest** | 生成成功率 | < 95% |
 | **投递** | 邮件发送成功率 | < 98% |
 | **缓存** | 分析缓存命中率 | < 80% |
+| **队列** | 等待任务数 / 失败任务数 | 持续增长 15 分钟以上 |
 
 ### 13.2 日志记录
 
@@ -775,6 +807,12 @@ logger.error("ai.analysis.failed", {
 - 每个内容的处理历史
 - 每个步骤的输入输出
 - 失败原因与重试次数
+
+### 13.4 队列可观测性
+
+- 使用 bull-board 作为日常运维入口，查看 waiting / active / delayed / failed 队列状态
+- 应用侧输出队列指标日志：`queue_name`、`job_id`、`attempts_made`、`latency_ms`
+- 失败任务保留最近错误栈，并支持人工重试
 
 ---
 
@@ -846,7 +884,7 @@ CREATE INDEX idx_feedback_target ON feedback_signals(target_type, target_id);
 - 初始化 Next.js 项目
 - 配置 Drizzle + PostgreSQL
 - 设计数据库 Schema
-- 配置 pg-boss
+- 配置 Redis + BullMQ + bull-board
 
 ### Phase 2: 来源管理 (2 天)
 - 实现 Source API
@@ -916,6 +954,6 @@ CREATE INDEX idx_feedback_target ON feedback_signals(target_type, target_id);
 
 ---
 
-**文档版本**: v0.1
+**文档版本**: v0.2
 **最后更新**: 2026-03-30
 **维护者**: smart-feed 开发团队
