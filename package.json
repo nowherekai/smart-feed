@@ -18,7 +18,7 @@
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
     "check": "biome check --write .",
-    "ci": "biome ci . && tsc --noEmit && bun test && bun run build"
+    "ci": "biome ci . && bun run typecheck && bun test && bun run build"
   },
   "dependencies": {
     "@biomejs/biome": "2.4.10",
