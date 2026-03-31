@@ -95,10 +95,6 @@ function parseOptionalIntegerEnv(
   return parseIntegerEnv(name, normalized, 0, range);
 }
 
-function getMachineTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-}
-
 function getAppEnvSignature(): string {
   return APP_ENV_KEYS.map((key) => `${key}=${process.env[key] ?? ""}`).join("\n");
 }
@@ -111,9 +107,7 @@ export function loadAppEnv(): AppEnv {
 
   const digestTimeZone = assertValidTimeZone(
     "SMART_FEED_DIGEST_TIMEZONE",
-    parseOptionalString(process.env.SMART_FEED_DIGEST_TIMEZONE) ??
-      timeZone ??
-      getMachineTimeZone(),
+    parseOptionalString(process.env.SMART_FEED_DIGEST_TIMEZONE) ?? timeZone,
   );
 
   return {
