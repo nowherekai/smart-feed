@@ -159,4 +159,16 @@ export async function createSource(data: NewSource): Promise<SourceRecord> {
   return requireInsertedSource(source);
 }
 
+export async function listActiveSourceIds(): Promise<string[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: sources.id,
+    })
+    .from(sources)
+    .where(eq(sources.status, "active"));
+
+  return rows.map((row) => row.id);
+}
+
 export type { NewSource, SourceRecord };

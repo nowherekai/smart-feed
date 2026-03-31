@@ -5,7 +5,7 @@ import { defaultJobOptions, queueName, workerConcurrency } from "./config";
 import { loadQueueEnv } from "./env";
 
 let redisConnection: IORedis | null = null;
-let cachedQueue: Queue<Record<string, unknown>, unknown> | null = null;
+let cachedQueue: Queue<Record<string, unknown>, unknown, string> | null = null;
 
 export function getRedisConnection(): IORedis {
   if (redisConnection) {
@@ -28,7 +28,7 @@ export function createQueue<TData = Record<string, unknown>, TResult = unknown>(
     defaultJobOptions,
   });
 
-  return cachedQueue as Queue<TData, TResult>;
+  return cachedQueue as Queue<TData, TResult, string>;
 }
 
 export function createWorker<TData = Record<string, unknown>, TResult = unknown, TName extends string = string>(
@@ -38,6 +38,15 @@ export function createWorker<TData = Record<string, unknown>, TResult = unknown,
     connection: getRedisConnection(),
     concurrency: workerConcurrency,
   });
+}
+
+export async function closeQueue() {
+  if (!cachedQueue) {
+    return;
+  }
+
+  await cachedQueue.close();
+  cachedQueue = null;
 }
 
 export async function closeRedisConnection() {

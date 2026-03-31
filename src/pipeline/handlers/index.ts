@@ -7,12 +7,14 @@ import { type ContentFetchHtmlPipelineResult, contentFetchHtmlHandler } from "./
 import { type ContentNormalizePipelineResult, contentNormalizeHandler } from "./content-normalize";
 import { type DigestComposePipelineResult, digestComposeHandler } from "./digest-compose";
 import { type DigestDeliverPipelineResult, digestDeliverHandler } from "./digest-deliver";
+import { type SchedulerSourcesSyncPipelineResult, schedulerSourcesSyncHandler } from "./scheduler-sources-sync";
 import { type SourceFetchPipelineResult, sourceFetchHandler } from "./source-fetch";
 import { type SourceImportPipelineResult, sourceImportHandler } from "./source-import";
 
 export type PipelineJobData = Record<string, unknown>;
 
 export type PipelineJobResult =
+  | SchedulerSourcesSyncPipelineResult
   | SourceImportPipelineResult
   | SourceFetchPipelineResult
   | ContentFetchHtmlPipelineResult
@@ -25,6 +27,7 @@ export type PipelineJobResult =
 type PipelineProcessor = Processor<PipelineJobData, PipelineJobResult, JobName>;
 
 export const pipelineHandlers = {
+  [jobNames.schedulerSourcesSync]: schedulerSourcesSyncHandler as PipelineProcessor,
   [jobNames.sourceImport]: sourceImportHandler as PipelineProcessor,
   [jobNames.sourceFetch]: sourceFetchHandler as PipelineProcessor,
   [jobNames.contentFetchHtml]: contentFetchHtmlHandler as PipelineProcessor,

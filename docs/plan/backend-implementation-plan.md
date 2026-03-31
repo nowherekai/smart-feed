@@ -34,7 +34,7 @@
 - [x] Task 5: 轻量分析与深度摘要
 - [x] Task 6: Digest 编排
 - [x] Task 7: Digest 投递
-- [ ] Task 8: 调度层
+- [x] Task 8: 调度层
 
 ---
 
@@ -557,8 +557,8 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 
 2. **Digest 定时生成调度**:
    - 每日本地 08:00 执行
-   - 使用 BullMQ repeatable job + cron 表达式
-   - 时区处理: 将本地 08:00 转换为 UTC cron
+   - 使用 BullMQ job scheduler 的 `pattern + tz` 按业务时区本地时间触发
+   - 时区处理: `SMART_FEED_DIGEST_TIMEZONE` 未配置时回退 `SMART_FEED_TIMEZONE`
    - 入队 `digest.compose` job
 
 3. **调度器生命周期**:
