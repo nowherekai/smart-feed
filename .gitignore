@@ -12,6 +12,7 @@ yarn-error.log*
 out/
 build/
 dist/
+.next/
 *.tgz
 
 # Python 相关
