@@ -1,32 +1,62 @@
+/**
+ * 应用环境变量配置与验证模块
+ * 负责从 process.env 中读取并校验 SMART_FEED_* 系列及相关基础设施的环境变量。
+ */
+
+/**
+ * 应用配置对象类型定义
+ */
 type AppEnv = {
+  /** 应用主时区 (如: Asia/Shanghai) */
   timeZone: string;
+  /** 内容抓取的滚动时间窗口（小时），超出此窗口的内容将仅记录哨兵而不进入流水线 */
   timeWindowHours: number;
+  /** 摘要报告的时区，默认为 timeZone */
   digestTimeZone: string;
+  /** 摘要报告发送的小时时刻 (0-23) */
   digestSendHour: number;
+  /** 摘要报告最大回溯的小时数 */
   digestMaxLookbackHours: number;
+  /** 是否启用邮件投递 */
   emailDeliveryEnabled: boolean;
+  /** 触发深度分析的价值评分阈值 (0-10) */
   valueScoreThreshold: number;
+  /** AI 服务商类型: dummy (假数据) 或 openrouter */
   aiProvider: AiProvider | null;
+  /** OpenRouter API Key */
   openRouterApiKey: string | null;
+  /** OpenRouter API 基础地址 */
   openRouterBaseUrl: string;
+  /** 基础分析（轻量级）使用的 AI 模型 ID */
   aiBasicModel: string | null;
+  /** 深度摘要使用的 AI 模型 ID */
   aiHeavyModel: string | null;
+  /** SMTP 服务器地址 */
   smtpHost: string | null;
+  /** SMTP 服务器端口 */
   smtpPort: number | null;
+  /** SMTP 用户名 */
   smtpUser: string | null;
+  /** SMTP 密码 */
   smtpPass: string | null;
+  /** 邮件发件人地址 */
   smtpFrom: string | null;
+  /** 邮件收件人地址 */
   smtpTo: string | null;
 };
 
+/** AI 服务商可选类型 */
 type AiProvider = "dummy" | "openrouter";
 
+// 默认值常量定义
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
 const DEFAULT_TIME_WINDOW_HOURS = 72;
 const DEFAULT_DIGEST_SEND_HOUR = 8;
 const DEFAULT_DIGEST_MAX_LOOKBACK_HOURS = 48;
 const DEFAULT_VALUE_SCORE_THRESHOLD = 6;
 const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+
+/** 需要监控变更的环境变量键列表，用于缓存失效判断 */
 const APP_ENV_KEYS = [
   "SMART_FEED_TIMEZONE",
   "SMART_FEED_TIME_WINDOW_HOURS",
@@ -48,14 +78,21 @@ const APP_ENV_KEYS = [
   "SMTP_TO",
 ] as const;
 
+// 缓存变量，避免重复解析
 let cachedAppEnv: Readonly<AppEnv> | null = null;
 let cachedAppEnvSignature: string | null = null;
 
+/**
+ * 解析可选字符串，并进行去空格处理
+ */
 function parseOptionalString(value: string | undefined): string | null {
   const normalized = value?.trim();
   return normalized ? normalized : null;
 }
 
+/**
+ * 解析 AI 服务商环境变量，校验合法性
+ */
 function parseOptionalAiProvider(value: string | undefined): AiProvider | null {
   const normalized = parseOptionalString(value);
 
@@ -70,6 +107,9 @@ function parseOptionalAiProvider(value: string | undefined): AiProvider | null {
   throw new Error(`[config/env] SMART_FEED_AI_PROVIDER must be one of "openrouter" or "dummy".`);
 }
 
+/**
+ * 解析布尔值环境变量
+ */
 function parseBooleanEnv(name: string, rawValue: string | undefined, defaultValue: boolean): boolean {
   const normalized = rawValue?.trim().toLowerCase();
 
@@ -88,6 +128,9 @@ function parseBooleanEnv(name: string, rawValue: string | undefined, defaultValu
   throw new Error(`[config/env] ${name} must be a boolean, received "${rawValue}".`);
 }
 
+/**
+ * 确保必填字符串存在
+ */
 function requireStringEnv(name: string, value: string | null): string {
   if (!value) {
     throw new Error(`[config/env] ${name} is required when SMART_FEED_EMAIL_DELIVERY_ENABLED is true.`);
@@ -96,6 +139,9 @@ function requireStringEnv(name: string, value: string | null): string {
   return value;
 }
 
+/**
+ * 校验时区标识符是否合法
+ */
 function assertValidTimeZone(name: string, timeZone: string): string {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
@@ -105,6 +151,9 @@ function assertValidTimeZone(name: string, timeZone: string): string {
   }
 }
 
+/**
+ * 解析整数环境变量，支持范围校验
+ */
 function parseIntegerEnv(
   name: string,
   rawValue: string | undefined,
@@ -134,6 +183,9 @@ function parseIntegerEnv(
   return parsed;
 }
 
+/**
+ * 解析可选整数环境变量
+ */
 function parseOptionalIntegerEnv(
   name: string,
   rawValue: string | undefined,
@@ -148,11 +200,18 @@ function parseOptionalIntegerEnv(
   return parseIntegerEnv(name, normalized, 0, range);
 }
 
+/**
+ * 获取当前配置的指纹，用于检测配置是否发生变化
+ */
 function getAppEnvSignature(): string {
   return APP_ENV_KEYS.map((key) => `${key}=${process.env[key] ?? ""}`).join("\n");
 }
 
+/**
+ * 核心加载逻辑：从环境变量中提取配置并执行深度验证
+ */
 export function loadAppEnv(): AppEnv {
+  // 1. 基础配置与时区校验
   const timeZone = assertValidTimeZone(
     "SMART_FEED_TIMEZONE",
     parseOptionalString(process.env.SMART_FEED_TIMEZONE) ?? DEFAULT_TIME_ZONE,
@@ -162,6 +221,8 @@ export function loadAppEnv(): AppEnv {
     "SMART_FEED_DIGEST_TIMEZONE",
     parseOptionalString(process.env.SMART_FEED_DIGEST_TIMEZONE) ?? timeZone,
   );
+
+  // 2. 邮件发送相关校验（若启用，则相关 SMTP 字段必填）
   const emailDeliveryEnabled = parseBooleanEnv(
     "SMART_FEED_EMAIL_DELIVERY_ENABLED",
     process.env.SMART_FEED_EMAIL_DELIVERY_ENABLED,
@@ -190,6 +251,7 @@ export function loadAppEnv(): AppEnv {
     requireStringEnv("SMTP_TO", smtpTo);
   }
 
+  // 3. 返回完整的配置对象
   return {
     timeZone,
     timeWindowHours: parseIntegerEnv(
@@ -232,6 +294,9 @@ export function loadAppEnv(): AppEnv {
   };
 }
 
+/**
+ * 获取应用配置（带缓存机制）
+ */
 export function getAppEnv(): Readonly<AppEnv> {
   const signature = getAppEnvSignature();
 
@@ -243,6 +308,9 @@ export function getAppEnv(): Readonly<AppEnv> {
   return cachedAppEnv;
 }
 
+/**
+ * 导出的单例配置对象，支持按需读取
+ */
 export const appEnv = {
   get timeZone() {
     return getAppEnv().timeZone;

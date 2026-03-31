@@ -1,3 +1,9 @@
+/**
+ * 摘要流水线运行时模块
+ * 专门负责“摘要生成 (digest.compose)”与“摘要投递 (digest.deliver)”流水线的执行与状态追踪。
+ * 与内容流水线运行时类似，但增加了对 digestId 的解析与关联。
+ */
+
 import type { PipelineStepExecutionResult, PipelineStepResult } from "../pipeline/types";
 import { createQueue, type JobName } from "../queue";
 import {
@@ -9,16 +15,21 @@ import {
   updateStepRun,
 } from "./pipeline-tracking";
 
+/** 摘要流水线的名称与版本 */
 const DIGEST_PIPELINE_NAME = "digest-generation";
 const DIGEST_PIPELINE_VERSION = "v1";
 
 type EnqueueJob = (jobName: JobName, data: Record<string, unknown>) => Promise<void>;
 
+/** 摘要任务的基础数据结构 */
 type DigestPipelineJobData = {
+  /** 流水线运行 ID，用于跨 Job 追踪 */
   pipelineRunId?: string;
+  /** 触发源 */
   trigger: string;
 };
 
+/** 依赖项接口 */
 type DigestPipelineRuntimeDeps = {
   createPipelineRun?: (data: NewPipelineRun) => Promise<{ id: string }>;
   createStepRun?: (data: NewStepRun) => Promise<{ id: string }>;
@@ -28,6 +39,7 @@ type DigestPipelineRuntimeDeps = {
   updateStepRun?: (id: string, data: Partial<Omit<NewStepRun, "id">>) => Promise<void>;
 };
 
+/** 执行选项，包含 digestId 的解析函数 */
 type ExecuteDigestPipelineStepOptions<
   TJobData extends DigestPipelineJobData,
   TPayload extends Record<string, unknown>,
@@ -35,7 +47,8 @@ type ExecuteDigestPipelineStepOptions<
   deps?: DigestPipelineRuntimeDeps;
   jobData: TJobData;
   jobName: JobName;
-  resolveDigestId?: (result: PipelineStepResult<TPayload>) => string | null;
+  /** 从执行结果或数据中提取 digestId，用于关联记录 */
+  resolveDigestId?: (result: PipelineStepResult<TPayload> & { jobData: TJobData }) => string | null;
   runStep: (jobData: TJobData) => Promise<PipelineStepResult<TPayload>>;
 };
 
@@ -70,6 +83,7 @@ function withPipelineRunId<TData extends Record<string, unknown>>(data: TData, p
   };
 }
 
+/** 辅助函数：构建包含 digestId 的更新对象 */
 function buildPipelineUpdate(
   digestId: string | null,
   data: Partial<Omit<NewPipelineRun, "id">>,
@@ -84,6 +98,15 @@ function buildPipelineUpdate(
   };
 }
 
+/**
+ * 执行摘要流水线步骤的核心函数
+ * 逻辑流：
+ * 1. 初始化或更新 PipelineRun。
+ * 2. 记录 StepRun。
+ * 3. 执行业务步骤并尝试解析 digestId。
+ * 4. 如果有下一步则入队。
+ * 5. 更新运行记录的最终状态，并关联产生的 digestId。
+ */
 export async function executeDigestPipelineStep<
   TJobData extends DigestPipelineJobData,
   TPayload extends Record<string, unknown>,
@@ -94,6 +117,7 @@ export async function executeDigestPipelineStep<
 
   let pipelineRunId = jobData.pipelineRunId;
 
+  // 1. 管理 PipelineRun 记录
   if (!pipelineRunId) {
     const pipelineRun = await deps.createPipelineRun({
       pipelineName: DIGEST_PIPELINE_NAME,
@@ -109,6 +133,7 @@ export async function executeDigestPipelineStep<
     });
   }
 
+  // 2. 记录步骤开始
   const stepRun = await deps.createStepRun({
     inputRef: serialize(jobData),
     pipelineRunId,
@@ -118,8 +143,11 @@ export async function executeDigestPipelineStep<
   });
 
   try {
+    // 3. 执行业务步骤
     const result = await runStep(jobData);
-    const digestId = options.resolveDigestId?.(result) ?? null;
+    // 摘要流程中，通常在 compose 之后才有 digestId，解析它并关联到流水线
+    const digestId = options.resolveDigestId?.({ ...result, jobData }) ?? null;
+
     const outputRef = serialize({
       message: result.message ?? null,
       nextStep: result.nextStep
@@ -133,6 +161,7 @@ export async function executeDigestPipelineStep<
       status: result.status,
     });
 
+    // 4. 处理失败
     if (result.status === "failed") {
       const finishedAt = deps.now();
 
@@ -161,6 +190,7 @@ export async function executeDigestPipelineStep<
       };
     }
 
+    // 5. 处理下一步入队
     let nextStepQueued = false;
 
     if (result.nextStep) {
@@ -170,6 +200,7 @@ export async function executeDigestPipelineStep<
 
     const finishedAt = deps.now();
 
+    // 6. 更新步骤记录
     await deps.updateStepRun(stepRun.id, {
       errorMessage: null,
       finishedAt,
@@ -177,6 +208,7 @@ export async function executeDigestPipelineStep<
       status: "completed",
     });
 
+    // 7. 更新流水线运行记录，确保关联了 digestId
     if (result.nextStep) {
       await deps.updatePipelineRun(
         pipelineRunId,
@@ -204,6 +236,7 @@ export async function executeDigestPipelineStep<
       status: result.status,
     };
   } catch (error) {
+    // 8. 异常捕获与记录
     const finishedAt = deps.now();
     const errorMessage = error instanceof Error && error.message ? error.message : "Unknown pipeline runtime error.";
 

@@ -1,3 +1,9 @@
+/**
+ * 流水线追踪服务模块
+ * 提供对 pipeline_runs 和 step_runs 表的增删改查操作。
+ * 用于审计和监控系统内所有自动化任务的执行情况。
+ */
+
 import { eq } from "drizzle-orm";
 
 import { getDb, pipelineRuns, stepRuns } from "../db";
@@ -18,6 +24,7 @@ function requireInsertedRow<T>(row: T | undefined, entityName: string): T {
   return row;
 }
 
+/** 创建流水线运行记录 */
 export async function createPipelineRun(data: NewPipelineRun): Promise<PipelineRun> {
   const db = getDb();
   const [pipelineRun] = await db.insert(pipelineRuns).values(data).returning();
@@ -25,6 +32,7 @@ export async function createPipelineRun(data: NewPipelineRun): Promise<PipelineR
   return requireInsertedRow(pipelineRun, "pipeline run");
 }
 
+/** 更新流水线运行记录（状态、结束时间等） */
 export async function updatePipelineRun(id: string, data: PipelineRunUpdate): Promise<void> {
   if (Object.keys(data).length === 0) {
     return;
@@ -34,6 +42,7 @@ export async function updatePipelineRun(id: string, data: PipelineRunUpdate): Pr
   await db.update(pipelineRuns).set(data).where(eq(pipelineRuns.id, id));
 }
 
+/** 创建步骤运行记录 */
 export async function createStepRun(data: NewStepRun): Promise<StepRun> {
   const db = getDb();
   const [stepRun] = await db.insert(stepRuns).values(data).returning();
@@ -41,6 +50,7 @@ export async function createStepRun(data: NewStepRun): Promise<StepRun> {
   return requireInsertedRow(stepRun, "step run");
 }
 
+/** 更新步骤运行记录（结果引用、错误消息等） */
 export async function updateStepRun(id: string, data: StepRunUpdate): Promise<void> {
   if (Object.keys(data).length === 0) {
     return;

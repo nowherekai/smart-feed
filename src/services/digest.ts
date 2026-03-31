@@ -1,3 +1,9 @@
+/**
+ * 摘要编排服务模块
+ * 负责日报（Daily Digest）的生成与编排逻辑。
+ * 包含：动态统计窗口计算、多条件内容筛选（时间、评分、可追溯性）、内容自动分组、Markdown 渲染及数据库事务持久化。
+ */
+
 import { and, desc, eq, gte, lte, ne } from "drizzle-orm";
 
 import { type AppEnv, getAppEnv } from "../config";
@@ -8,6 +14,7 @@ import { getDigestWindow } from "../utils";
 import { type DigestRenderableItem, type DigestRenderSection, renderDigestMarkdown } from "./digest-renderer";
 import { canEnterDigest } from "./traceability";
 
+// 类型定义
 type DigestReportRecord = typeof digestReports.$inferSelect;
 type NewDigestReport = typeof digestReports.$inferInsert;
 type DigestReportUpdate = Partial<Omit<NewDigestReport, "id">>;
@@ -15,6 +22,7 @@ type NewDigestItem = typeof digestItems.$inferInsert;
 
 type DigestSummary = AnalysisSummary;
 
+/** 原始数据库查询行结果结构 */
 type DigestComposeRow = {
   analysisCreatedAt: Date;
   analysisRecordId: string;
@@ -32,6 +40,7 @@ type DigestComposeRow = {
   valueScore: number;
 };
 
+/** 编排后的条目结构，增加了 sectionTitle */
 type DigestSectionItem = DigestRenderableItem & {
   analysisCreatedAt: Date;
   analysisRecordId: string;
@@ -41,11 +50,13 @@ type DigestSectionItem = DigestRenderableItem & {
   valueScore: number;
 };
 
+/** 编排候选集：包含排序后的扁平列表和分组后的渲染结构 */
 type DigestComposeCandidate = {
   items: DigestSectionItem[];
   sections: DigestRenderSection[];
 };
 
+/** 持久化输入参数 */
 type PersistDigestInput = {
   digestCandidate: DigestComposeCandidate;
   digestDate: string;
@@ -56,28 +67,40 @@ type PersistDigestInput = {
   windowStart: Date;
 };
 
+/** 编排任务输入数据 */
 export type DigestComposeJobData = {
   pipelineRunId?: string;
   trigger: "manual" | "scheduler";
 };
 
+/** 投递任务输入数据 */
 export type DigestDeliverJobData = {
   digestId: string;
   pipelineRunId?: string;
-  trigger: "digest.compose";
+  trigger: "manual" | "scheduler" | "digest.compose";
 };
 
+/** 编排执行业务载荷 */
 export type DigestComposePayload = {
+  /** 报告日期标签 (YYYY-MM-DD) */
   digestDate: string;
+  /** 生成的报告 ID */
   digestId: string | null;
+  /** 是否是空报告（无高价值内容） */
   emptyDigest: boolean;
+  /** 包含的内容条目总数 */
   itemCount: number;
+  /** 是否复用了已有的草稿记录 */
   reusedExistingDigest: boolean;
+  /** 是否因已发送而跳过 */
   skippedBecauseAlreadySent: boolean;
+  /** 统计窗口结束 ISO 字符串 */
   windowEnd: string;
+  /** 统计窗口开始 ISO 字符串 */
   windowStart: string;
 };
 
+// 依赖项
 export type DigestComposeDeps = {
   appEnv?: Pick<AppEnv, "digestMaxLookbackHours" | "digestSendHour" | "digestTimeZone">;
   collectDigestRows?: (windowStart: Date, windowEnd: Date) => Promise<DigestComposeRow[]>;
@@ -96,6 +119,7 @@ function requireInsertedRow<T>(row: T | undefined, entityName: string): T {
   return row;
 }
 
+/** 格式化本地日期标签 (YYYY-MM-DD) */
 function toDateLabel(date: Date, timeZone: string): string {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -112,10 +136,12 @@ function toDateLabel(date: Date, timeZone: string): string {
   return `${year}-${month}-${day}`;
 }
 
+/** 生成邮件主题 */
 function getEmailSubject(digestDate: string): string {
   return `[smart-feed] 日报 ${digestDate}`;
 }
 
+/** 摘要合法性预检 */
 function hasRenderableSummary(summary: DigestSummary | null): summary is DigestSummary {
   return Boolean(
     summary &&
@@ -126,11 +152,18 @@ function hasRenderableSummary(summary: DigestSummary | null): summary is DigestS
   );
 }
 
+/** 根据分类数组获取主分类标题 */
 function getSectionTitle(categories: string[]): string {
   const primaryCategory = categories[0]?.trim();
   return primaryCategory ? primaryCategory : "未分类";
 }
 
+/**
+ * 编排排序逻辑
+ * 1. 价值评分 (valueScore) 降序。
+ * 2. 业务时间 (contentEffectiveAt) 降序。
+ * 3. 分析时间 (analysisCreatedAt) 降序。
+ */
 function sortDigestItems(left: DigestSectionItem, right: DigestSectionItem): number {
   if (left.valueScore !== right.valueScore) {
     return right.valueScore - left.valueScore;
@@ -147,6 +180,14 @@ function sortDigestItems(left: DigestSectionItem, right: DigestSectionItem): num
   return left.analysisRecordId.localeCompare(right.analysisRecordId);
 }
 
+/**
+ * 筛选与分组逻辑
+ * 1. 排除 blocked 来源。
+ * 2. 必须有完整摘要。
+ * 3. 必须通过可追溯性校验 (Traceability)。
+ * 4. 同一篇内容若有多次分析，取最新的一条。
+ * 5. 按主分类分组。
+ */
 function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidate {
   const latestByContentId = new Map<string, DigestSectionItem>();
 
@@ -159,6 +200,7 @@ function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidat
       continue;
     }
 
+    // 可追溯性校验
     if (
       !canEnterDigest({
         contentTraceId: row.contentTraceId,
@@ -175,21 +217,17 @@ function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidat
       continue;
     }
 
-    const contentTraceId = row.contentTraceId;
-    const evidenceSnippet = row.evidenceSnippet;
-    const sourceTraceId = row.sourceTraceId;
-
     const item: DigestSectionItem = {
       analysisCreatedAt: row.analysisCreatedAt,
       analysisRecordId: row.analysisRecordId,
       contentEffectiveAt: row.contentEffectiveAt,
       contentId: row.contentId,
-      contentTraceId,
-      evidenceSnippet,
+      contentTraceId: row.contentTraceId,
+      evidenceSnippet: row.evidenceSnippet,
       originalUrl: row.originalUrl,
       sectionTitle: getSectionTitle(row.categories),
       sourceName: row.sourceName,
-      sourceTraceId,
+      sourceTraceId: row.sourceTraceId,
       summary: row.summary,
       title: row.contentTitle?.trim() ? row.contentTitle.trim() : row.originalUrl,
       valueScore: row.valueScore,
@@ -197,12 +235,16 @@ function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidat
 
     const existing = latestByContentId.get(item.contentId);
 
+    // 同一内容去重，保留最新分析结果
     if (!existing || item.analysisCreatedAt.getTime() > existing.analysisCreatedAt.getTime()) {
       latestByContentId.set(item.contentId, item);
     }
   }
 
+  // 排序
   const items = [...latestByContentId.values()].sort(sortDigestItems);
+
+  // 按分类标题进行物理分组用于渲染
   const grouped = new Map<string, DigestRenderableItem[]>();
 
   for (const item of items) {
@@ -221,6 +263,8 @@ function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidat
     sections,
   };
 }
+
+// --- 数据库查询 ---
 
 async function findLatestSentDigestReport(): Promise<DigestReportRecord | null> {
   const db = getDb();
@@ -243,6 +287,7 @@ async function findDigestReportByDate(digestDate: string): Promise<DigestReportR
   return record ?? null;
 }
 
+/** 收集窗口内所有符合条件的分析记录 */
 async function collectDigestRows(windowStart: Date, windowEnd: Date): Promise<DigestComposeRow[]> {
   const db = getDb();
 
@@ -270,12 +315,18 @@ async function collectDigestRows(windowStart: Date, windowEnd: Date): Promise<Di
       and(
         gte(contentItems.effectiveAt, windowStart),
         lte(contentItems.effectiveAt, windowEnd),
-        eq(analysisRecords.status, "full"),
-        ne(sources.status, "blocked"),
+        eq(analysisRecords.status, "full"), // 必须是完整的深度摘要
+        ne(sources.status, "blocked"), // 排除已屏蔽来源
       ),
     );
 }
 
+/**
+ * 摘要持久化原子操作 (事务)
+ * 1. 若已有今日草稿，则更新元数据并清空旧条目。
+ * 2. 若无，创建新的 DigestReport。
+ * 3. 批量插入 DigestItem 记录文章关联。
+ */
 async function persistDigest(input: PersistDigestInput): Promise<string> {
   const db = getDb();
 
@@ -313,6 +364,7 @@ async function persistDigest(input: PersistDigestInput): Promise<string> {
       throw new Error("[services/digest] Missing digest report id after compose.");
     }
 
+    // 批量插入关联条目
     const itemInserts: NewDigestItem[] = input.digestCandidate.items.map((item, index) => ({
       analysisRecordId: item.analysisRecordId,
       digestId,
@@ -362,11 +414,23 @@ function buildPayload(input: {
   };
 }
 
+/**
+ * 摘要编排任务核心逻辑 (Task 6)
+ * 1. 计算统计区间：[max(上次成功发送时间, 24h前), 现在本地8点]。
+ * 2. 幂等检查：若今日日报已处于 sent 状态，则跳过生成。
+ * 3. 数据收集：获取区间内所有 status='full' 的分析记录。
+ * 4. 编排处理：执行筛选、去重、排序及分组。
+ * 5. 渲染：将分组后的数据渲染为 Markdown 正文。
+ * 6. 存储：原子化写入数据库 (digest_reports + digest_items)。
+ * 7. 完成后入队下一步：摘要投递 (digest.deliver)。
+ */
 export async function runDigestCompose(
   _jobData: DigestComposeJobData,
   overrides: DigestComposeDeps = {},
 ): Promise<PipelineStepResult<DigestComposePayload, DigestDeliverJobData>> {
   const deps = buildDigestDeps(overrides);
+
+  // 1. 获取统计区间
   const latestSentReport = await deps.findLatestSentDigestReport();
   const { windowEnd, windowStart } = getDigestWindow(
     latestSentReport?.sentAt ?? null,
@@ -376,8 +440,9 @@ export async function runDigestCompose(
     deps.now(),
   );
   const digestDate = toDateLabel(windowEnd, deps.appEnv.digestTimeZone);
-  const existingReport = await deps.findDigestReportByDate(digestDate);
 
+  // 2. 幂等性检查
+  const existingReport = await deps.findDigestReportByDate(digestDate);
   if (existingReport?.status === "sent") {
     return createCompletedStepResult({
       message: `digest.compose skipped because ${digestDate} has already been sent`,
@@ -394,12 +459,17 @@ export async function runDigestCompose(
     });
   }
 
+  // 3. 执行核心编排
   const digestCandidate = selectDigestCandidates(await deps.collectDigestRows(windowStart, windowEnd));
+
+  // 4. 渲染 Markdown
   const markdownBody = deps.renderMarkdown({
     digestDate,
     sections: digestCandidate.sections,
   });
   const emailSubject = getEmailSubject(digestDate);
+
+  // 5. 持久化
   const digestId = await deps.persistDigest({
     digestCandidate,
     digestDate,
@@ -413,6 +483,7 @@ export async function runDigestCompose(
   const emptyDigest = digestCandidate.items.length === 0;
   const reusedExistingDigest = Boolean(existingReport);
 
+  // 6. 入队投递任务
   return createCompletedStepResult({
     message: emptyDigest
       ? `digest.compose prepared empty digest for ${digestDate}`

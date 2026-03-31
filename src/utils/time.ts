@@ -1,5 +1,13 @@
+/**
+ * 时间工具模块
+ * 专门处理业务时区（如 Asia/Shanghai）相关的日期转换、窗口计算。
+ * 核心逻辑：基于 Intl.DateTimeFormat 提取各时区下的墙上时间（Wall Clock），
+ * 避免因 Node.js 环境默认时区导致的偏移错误。
+ */
+
 const MS_PER_HOUR = 60 * 60 * 1000;
 
+/** 各时区拆解后的日期组件 */
 type ZonedDateParts = {
   year: number;
   month: number;
@@ -11,10 +19,9 @@ type ZonedDateParts = {
 
 type ZonedDatePartKey = keyof ZonedDateParts;
 
-// Task 0 只需要支撑当前 MVP 的业务时区计算。
-// 本项目默认且主要使用 Asia/Shanghai，这里明确按“无夏令时”时区处理，
-// 不额外处理 DST 切换日的歧义或跳时场景。
-
+/**
+ * 校验时区标识符是否合法
+ */
 function assertValidTimeZone(timeZone: string): string {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
@@ -24,6 +31,9 @@ function assertValidTimeZone(timeZone: string): string {
   }
 }
 
+/**
+ * 获取指定日期在目标时区下的各组件值
+ */
 function getZonedDateParts(date: Date, timeZone: string): ZonedDateParts {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -33,7 +43,7 @@ function getZonedDateParts(date: Date, timeZone: string): ZonedDateParts {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hourCycle: "h23",
+    hourCycle: "h23", // 强制 24 小时制
   });
 
   const values: Partial<Record<ZonedDatePartKey, number>> = {};
@@ -65,6 +75,9 @@ function getZonedDateParts(date: Date, timeZone: string): ZonedDateParts {
   };
 }
 
+/**
+ * 按日历天进行平移（处理月份和跨年溢出）
+ */
 function shiftCalendarDay(parts: ZonedDateParts, deltaDays: number) {
   const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
   shifted.setUTCDate(shifted.getUTCDate() + deltaDays);
@@ -76,6 +89,9 @@ function shiftCalendarDay(parts: ZonedDateParts, deltaDays: number) {
   };
 }
 
+/**
+ * 计算目标时区相对于 UTC 的偏移毫秒数
+ */
 function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
   const parts = getZonedDateParts(date, timeZone);
   const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
@@ -83,12 +99,13 @@ function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
   return asUtc - date.getTime();
 }
 
+/**
+ * 将指定时区的日历时间反推回 UTC Date 对象
+ */
 function zonedDateTimeToUtc(parts: ZonedDateParts, timeZone: string): Date {
   const guess = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
 
-  // 这里用一次 offset 反推 UTC 即可。
-  // 对 Asia/Shanghai 这类无 DST 的业务时区，offset 在当天是稳定的，
-  // 不需要再做二次校正。
+  // 对 Asia/Shanghai 这类无 DST 的业务时区，offset 在当天是稳定的
   const offset = getTimeZoneOffsetMs(new Date(guess), timeZone);
   return new Date(guess - offset);
 }
@@ -99,25 +116,42 @@ function assertNonNegativeNumber(name: string, value: number) {
   }
 }
 
+/**
+ * 获取本地“墙上时钟”的虚拟毫秒数
+ */
 function getLocalWallClockMs(date: Date, timeZone: string): number {
   return date.getTime() + getTimeZoneOffsetMs(date, timeZone);
 }
 
+/**
+ * 获取内容的有效生效时间
+ * 优先使用发布时间，若无则使用抓取时间。
+ */
 export function getEffectiveTime(publishedAt?: Date | null, fetchedAt?: Date | null): Date | null {
   return publishedAt ?? fetchedAt ?? null;
 }
 
+/**
+ * 判断日期是否在最近的 N 小时窗口内
+ * 窗口计算基于目标时区的本地时间。
+ */
 export function isInTimeWindow(effectiveTime: Date, windowHours: number, timeZone: string, now = new Date()): boolean {
   assertValidTimeZone(timeZone);
   assertNonNegativeNumber("windowHours", windowHours);
 
-  // 按业务时区本地时钟做滚动窗口比较。
-  // 在 Asia/Shanghai 这类无 DST 时区里，这个比较与绝对时间差等价，
-  // 但这里保留显式时区参与，避免接口语义与实现脱节。
   const threshold = getLocalWallClockMs(now, timeZone) - windowHours * MS_PER_HOUR;
   return getLocalWallClockMs(effectiveTime, timeZone) >= threshold;
 }
 
+/**
+ * 计算摘要统计窗口 (Task 6)
+ * 逻辑：
+ * 1. 确定 windowEnd：若当前小时已过 sendHour (如8点)，则 windowEnd 为今日 sendHour；否则为昨日 sendHour。
+ * 2. 确定 windowStart：
+ *    - 若有上次成功发送记录，取上次记录。
+ *    - 否则从 windowEnd 向前推 maxLookbackHours。
+ *    - 且 windowStart 不能早于 maxLookbackHours 限制。
+ */
 export function getDigestWindow(
   lastSuccessDigestAt: Date | null,
   sendHour: number,
@@ -136,7 +170,10 @@ export function getDigestWindow(
   }
 
   const nowParts = getZonedDateParts(now, timeZone);
+  // 锚定基准日：如果还没到发送时间，则基准是昨天
   const anchorDate = nowParts.hour < sendHour ? shiftCalendarDay(nowParts, -1) : nowParts;
+
+  // 窗口结束：基准日的 sendHour 整点
   const windowEnd = zonedDateTimeToUtc(
     {
       year: anchorDate.year,
@@ -148,6 +185,8 @@ export function getDigestWindow(
     },
     timeZone,
   );
+
+  // 窗口开始：最大回溯起点 vs 上次成功时间
   const lookbackStart = new Date(windowEnd.getTime() - maxLookbackHours * MS_PER_HOUR);
   const windowStart =
     lastSuccessDigestAt && lastSuccessDigestAt.getTime() > lookbackStart.getTime()
