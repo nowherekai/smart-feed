@@ -27,7 +27,7 @@
 ### 任务清单
 
 - [x] Task 0: 基础设施与工具层
-- [ ] Task 1: 来源接入 Pipeline
+- [x] Task 1: 来源接入 Pipeline
 - [ ] Task 2: RSS 抓取与内容入库
 - [ ] Task 3: HTML 抓取与 Markdown 标准化
 - [ ] Task 4: AI 适配层
