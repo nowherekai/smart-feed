@@ -9,10 +9,10 @@ type LogEntry = LogContext & {
 
 function writeLog(level: LogLevel, message: string, context: LogContext = {}): LogEntry {
   const entry: LogEntry = {
+    ...context,
     level,
     message,
     ts: new Date().toISOString(),
-    ...context,
   };
   const writer =
     level === "debug"
