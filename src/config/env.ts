@@ -64,7 +64,7 @@ function parseIntegerEnv(
     return defaultValue;
   }
 
-  if (!/^-?\d+$/.test(normalized)) {
+  if (!/^[+-]?\d+$/.test(normalized)) {
     throw new Error(`[config/env] ${name} must be an integer, received "${rawValue}".`);
   }
 
