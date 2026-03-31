@@ -9,7 +9,11 @@ const APP_ENV_KEYS = [
   "SMART_FEED_DIGEST_SEND_HOUR",
   "SMART_FEED_DIGEST_MAX_LOOKBACK_HOURS",
   "SMART_FEED_VALUE_SCORE_THRESHOLD",
-  "ANTHROPIC_API_KEY",
+  "SMART_FEED_AI_PROVIDER",
+  "OPENROUTER_API_KEY",
+  "OPENROUTER_BASE_URL",
+  "SMART_FEED_AI_BASIC_MODEL",
+  "SMART_FEED_AI_HEAVY_MODEL",
   "SMTP_HOST",
   "SMTP_PORT",
   "SMTP_USER",
@@ -57,7 +61,11 @@ test("loadAppEnv applies defaults and optional nulls", () => {
     expect(env.digestSendHour).toBe(8);
     expect(env.digestMaxLookbackHours).toBe(48);
     expect(env.valueScoreThreshold).toBe(6);
-    expect(env.anthropicApiKey).toBeNull();
+    expect(env.aiProvider).toBeNull();
+    expect(env.openRouterApiKey).toBeNull();
+    expect(env.openRouterBaseUrl).toBe("https://openrouter.ai/api/v1");
+    expect(env.aiBasicModel).toBeNull();
+    expect(env.aiHeavyModel).toBeNull();
     expect(env.smtpPort).toBeNull();
     expect(env.smtpHost).toBeNull();
   });
@@ -72,7 +80,11 @@ test("loadAppEnv reads explicit overrides and appEnv proxies them", () => {
       SMART_FEED_DIGEST_SEND_HOUR: "6",
       SMART_FEED_DIGEST_MAX_LOOKBACK_HOURS: "12",
       SMART_FEED_VALUE_SCORE_THRESHOLD: "8",
-      ANTHROPIC_API_KEY: "test-key",
+      SMART_FEED_AI_PROVIDER: "openrouter",
+      OPENROUTER_API_KEY: "test-key",
+      OPENROUTER_BASE_URL: "https://openrouter.example.com/api/v1",
+      SMART_FEED_AI_BASIC_MODEL: "openai/gpt-4o-mini",
+      SMART_FEED_AI_HEAVY_MODEL: "openai/gpt-4o",
       SMTP_HOST: "smtp.example.com",
       SMTP_PORT: "587",
       SMTP_USER: "user",
@@ -89,9 +101,13 @@ test("loadAppEnv reads explicit overrides and appEnv proxies them", () => {
       expect(env.digestSendHour).toBe(6);
       expect(env.digestMaxLookbackHours).toBe(12);
       expect(env.valueScoreThreshold).toBe(8);
+      expect(env.aiProvider).toBe("openrouter");
+      expect(env.openRouterBaseUrl).toBe("https://openrouter.example.com/api/v1");
+      expect(env.aiBasicModel).toBe("openai/gpt-4o-mini");
+      expect(env.aiHeavyModel).toBe("openai/gpt-4o");
       expect(appEnv.smtpPort).toBe(587);
       expect(appEnv.smtpFrom).toBe("from@example.com");
-      expect(appEnv.anthropicApiKey).toBe("test-key");
+      expect(appEnv.openRouterApiKey).toBe("test-key");
     },
   );
 });
@@ -162,6 +178,15 @@ test("loadAppEnv rejects invalid numeric and timezone values", () => {
     },
     () => {
       expect(() => loadAppEnv()).toThrow("SMART_FEED_VALUE_SCORE_THRESHOLD must be <= 10");
+    },
+  );
+
+  withEnv(
+    {
+      SMART_FEED_AI_PROVIDER: "anthropic",
+    },
+    () => {
+      expect(() => loadAppEnv()).toThrow('SMART_FEED_AI_PROVIDER must be one of "openrouter" or "dummy"');
     },
   );
 });

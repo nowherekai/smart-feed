@@ -5,7 +5,11 @@ type AppEnv = {
   digestSendHour: number;
   digestMaxLookbackHours: number;
   valueScoreThreshold: number;
-  anthropicApiKey: string | null;
+  aiProvider: AiProvider | null;
+  openRouterApiKey: string | null;
+  openRouterBaseUrl: string;
+  aiBasicModel: string | null;
+  aiHeavyModel: string | null;
   smtpHost: string | null;
   smtpPort: number | null;
   smtpUser: string | null;
@@ -14,11 +18,14 @@ type AppEnv = {
   smtpTo: string | null;
 };
 
+type AiProvider = "dummy" | "openrouter";
+
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
 const DEFAULT_TIME_WINDOW_HOURS = 72;
 const DEFAULT_DIGEST_SEND_HOUR = 8;
 const DEFAULT_DIGEST_MAX_LOOKBACK_HOURS = 48;
 const DEFAULT_VALUE_SCORE_THRESHOLD = 6;
+const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const APP_ENV_KEYS = [
   "SMART_FEED_TIMEZONE",
   "SMART_FEED_TIME_WINDOW_HOURS",
@@ -26,7 +33,11 @@ const APP_ENV_KEYS = [
   "SMART_FEED_DIGEST_SEND_HOUR",
   "SMART_FEED_DIGEST_MAX_LOOKBACK_HOURS",
   "SMART_FEED_VALUE_SCORE_THRESHOLD",
-  "ANTHROPIC_API_KEY",
+  "SMART_FEED_AI_PROVIDER",
+  "OPENROUTER_API_KEY",
+  "OPENROUTER_BASE_URL",
+  "SMART_FEED_AI_BASIC_MODEL",
+  "SMART_FEED_AI_HEAVY_MODEL",
   "SMTP_HOST",
   "SMTP_PORT",
   "SMTP_USER",
@@ -41,6 +52,20 @@ let cachedAppEnvSignature: string | null = null;
 function parseOptionalString(value: string | undefined): string | null {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+function parseOptionalAiProvider(value: string | undefined): AiProvider | null {
+  const normalized = parseOptionalString(value);
+
+  if (normalized === null) {
+    return null;
+  }
+
+  if (normalized === "dummy" || normalized === "openrouter") {
+    return normalized;
+  }
+
+  throw new Error(`[config/env] SMART_FEED_AI_PROVIDER must be one of "openrouter" or "dummy".`);
 }
 
 function assertValidTimeZone(name: string, timeZone: string): string {
@@ -137,7 +162,11 @@ export function loadAppEnv(): AppEnv {
       DEFAULT_VALUE_SCORE_THRESHOLD,
       { min: 0, max: 10 },
     ),
-    anthropicApiKey: parseOptionalString(process.env.ANTHROPIC_API_KEY),
+    aiProvider: parseOptionalAiProvider(process.env.SMART_FEED_AI_PROVIDER),
+    openRouterApiKey: parseOptionalString(process.env.OPENROUTER_API_KEY),
+    openRouterBaseUrl: parseOptionalString(process.env.OPENROUTER_BASE_URL) ?? DEFAULT_OPENROUTER_BASE_URL,
+    aiBasicModel: parseOptionalString(process.env.SMART_FEED_AI_BASIC_MODEL),
+    aiHeavyModel: parseOptionalString(process.env.SMART_FEED_AI_HEAVY_MODEL),
     smtpHost: parseOptionalString(process.env.SMTP_HOST),
     smtpPort: parseOptionalIntegerEnv("SMTP_PORT", process.env.SMTP_PORT, {
       min: 1,
@@ -180,8 +209,20 @@ export const appEnv = {
   get valueScoreThreshold() {
     return getAppEnv().valueScoreThreshold;
   },
-  get anthropicApiKey() {
-    return getAppEnv().anthropicApiKey;
+  get aiProvider() {
+    return getAppEnv().aiProvider;
+  },
+  get openRouterApiKey() {
+    return getAppEnv().openRouterApiKey;
+  },
+  get openRouterBaseUrl() {
+    return getAppEnv().openRouterBaseUrl;
+  },
+  get aiBasicModel() {
+    return getAppEnv().aiBasicModel;
+  },
+  get aiHeavyModel() {
+    return getAppEnv().aiHeavyModel;
   },
   get smtpHost() {
     return getAppEnv().smtpHost;
@@ -203,4 +244,4 @@ export const appEnv = {
   },
 } satisfies Readonly<AppEnv>;
 
-export type { AppEnv };
+export type { AiProvider, AppEnv };

@@ -30,7 +30,7 @@
 - [x] Task 1: 来源接入 Pipeline
 - [x] Task 2: RSS 抓取与内容入库
 - [x] Task 3: HTML 抓取与 Markdown 标准化
-- [ ] Task 4: AI 适配层
+- [x] Task 4: AI 适配层
 - [ ] Task 5: 轻量分析与深度摘要
 - [ ] Task 6: Digest 编排
 - [ ] Task 7: Digest 投递
@@ -91,7 +91,11 @@ SMART_FEED_DIGEST_TIMEZONE=                # Digest 时区，未配置时回退 
 SMART_FEED_DIGEST_SEND_HOUR=8              # Digest 发送时刻(本地小时)
 SMART_FEED_DIGEST_MAX_LOOKBACK_HOURS=48    # Digest 最大回溯窗口(小时)
 SMART_FEED_VALUE_SCORE_THRESHOLD=6         # 触发深度分析的阈值
-ANTHROPIC_API_KEY=                         # AI API Key
+SMART_FEED_AI_PROVIDER=                    # AI Provider: openrouter | dummy；未配置则 AI disabled
+OPENROUTER_API_KEY=                        # OpenRouter API Key
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+SMART_FEED_AI_BASIC_MODEL=                 # 轻量分析模型 ID
+SMART_FEED_AI_HEAVY_MODEL=                 # 深度摘要模型 ID
 SMTP_HOST= / SMTP_PORT= / SMTP_USER= / SMTP_PASS=  # 邮件配置
 SMTP_FROM= / SMTP_TO=                     # 发件人/收件人
 ```
@@ -278,7 +282,7 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 
 **涉及实体**: analysis_record (1 个，仅 schema 定义层面)
 
-**目标**: 搭建 Vercel AI SDK 客户端、Prompt 版本管理和输出 Schema
+**目标**: 搭建 Vercel AI SDK 客户端、Prompt 版本管理和输出 Schema；默认接 OpenRouter，并支持显式启用 dummy provider
 
 **交付文件**:
 
@@ -292,15 +296,18 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 **核心设计**:
 
 1. **客户端** (client.ts):
-   - 初始化 Anthropic provider
-   - 提供 `analyzeContent(content, strategy)` 统一入口
-   - 支持 haiku (轻量分析) 和 sonnet (深度摘要) 两种模型
+   - 提供 `getAiRuntimeState()`，返回 `disabled | dummy | openrouter`
+   - 提供 `assertAiAvailable()`，未配置 provider 时抛出 typed error
+   - 默认使用 OpenAI-compatible provider 对接 OpenRouter
+   - 仅在 `SMART_FEED_AI_PROVIDER=dummy` 时启用 dummy provider
+   - 提供 `runBasicAnalysis(input)` / `runHeavySummary(input)` 两个统一入口
+   - `SMART_FEED_AI_PROVIDER` 未配置时不静默回退，AI 阶段应被阻断，但不影响 Task 1-3
 
 2. **Prompt 注册表** (prompts.ts):
    ```typescript
    const PROMPTS = {
-     "basic-analysis-v1": { system, user, model: "haiku" },
-     "heavy-summary-v1": { system, user, model: "sonnet" }
+     "basic-analysis-v1": { system, prompt, modelStrategy: "openrouter-basic" | "dummy-basic" },
+     "heavy-summary-v1": { system, prompt, modelStrategy: "openrouter-heavy" | "dummy-heavy" }
    }
    ```
 
@@ -326,12 +333,14 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
    ```
 
 **验收标准**:
-- [ ] AI SDK 客户端可成功连接 Claude API
+- [ ] `SMART_FEED_AI_PROVIDER` 未配置时 runtime state 为 `disabled`，Task 4 不回退到 dummy
+- [ ] `SMART_FEED_AI_PROVIDER=dummy` 时可返回通过 Schema 校验的确定性假结果
+- [ ] `SMART_FEED_AI_PROVIDER=openrouter` 时使用 OpenAI-compatible provider 组装 OpenRouter 客户端
 - [ ] 两个 Prompt 版本已注册且可正确加载
 - [ ] Zod Schema 严格定义输出结构，AI 返回结果通过校验
-- [ ] 模型策略字符串 ("haiku-basic" / "sonnet-summary") 与 prompt_version ("basic-analysis-v1" / "heavy-summary-v1") 正确对应
+- [ ] 模型策略字符串 (`openrouter-basic` / `openrouter-heavy` / `dummy-basic` / `dummy-heavy`) 与 prompt_version 正确对应
 
-**新增依赖**: `ai`, `@ai-sdk/anthropic`, `zod`
+**新增依赖**: `ai`, `@ai-sdk/openai`, `zod`
 
 ---
 
@@ -353,7 +362,7 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 **核心逻辑**:
 
 1. **content.analyze.basic**:
-   - 缓存检查: 查 `(content_id, "haiku-basic", "basic-analysis-v1")` 是否已存在
+   - 缓存检查: 查 `(content_id, model_strategy, "basic-analysis-v1")` 是否已存在
    - 命中缓存 → 跳过，直接检查是否需要入队 heavy
    - 未命中 → 调用 AI 轻量分析
    - 存储 analysis_record (status=basic)
@@ -362,7 +371,7 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
    - `value_score <= THRESHOLD(6)` → 直接更新 content_items.status = "analyzed"（低价值内容到此完结，不进入深度摘要）
 
 2. **content.analyze.heavy**:
-   - 缓存检查: 查 `(content_id, "sonnet-summary", "heavy-summary-v1")` 是否已存在
+   - 缓存检查: 查 `(content_id, model_strategy, "heavy-summary-v1")` 是否已存在
    - 调用 AI 深度摘要
    - 生成 oneline, points, reason, evidence_snippet
    - 验证 evidence_snippet 是否存在于 cleaned_md（降级为前 200 字符）
@@ -591,7 +600,7 @@ src/pipeline/
 | `turndown` | latest | HTML → Markdown | Task 3 |
 | `@types/turndown` | latest | TypeScript 类型 | Task 3 |
 | `ai` | latest | Vercel AI SDK 核心 | Task 4 |
-| `@ai-sdk/anthropic` | latest | Claude 模型适配器 | Task 4 |
+| `@ai-sdk/openai` | latest | OpenAI-compatible 模型适配器（默认对接 OpenRouter） | Task 4 |
 | `zod` | latest | Schema 验证 | Task 4 |
 | `nodemailer` | latest | SMTP 邮件发送 | Task 7 |
 | `@types/nodemailer` | latest | TypeScript 类型 | Task 7 |
