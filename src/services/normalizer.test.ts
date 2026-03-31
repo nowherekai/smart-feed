@@ -32,6 +32,29 @@ test("normalizeRawContent removes noise and keeps body links and images", () => 
   expect(result.markdown).not.toContain("footer");
 });
 
+test("normalizeRawContent prefers article content root over unrelated body text", () => {
+  const result = normalizeRawContent({
+    format: "html",
+    originalUrl: "https://example.com/post",
+    rawBody: `
+      <html>
+        <body>
+          <div>站点公告，不属于正文。</div>
+          <article>
+            <p>正文第一段。</p>
+            <p>正文第二段。</p>
+          </article>
+        </body>
+      </html>
+    `,
+    title: "Article Title",
+  });
+
+  expect(result.markdown).toContain("正文第一段。");
+  expect(result.markdown).toContain("正文第二段。");
+  expect(result.markdown).not.toContain("站点公告，不属于正文。");
+});
+
 test("normalizeRawContent truncates markdown to 50KB", () => {
   const repeatedParagraph = "这是一段很长的正文，用于测试截断逻辑。".repeat(400);
   const result = normalizeRawContent({

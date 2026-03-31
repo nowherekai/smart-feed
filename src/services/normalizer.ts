@@ -126,8 +126,8 @@ function pickBestContentRoot(document: ParsedHtmlDocument): ContentElement {
     return document.body;
   }
 
-  let bestCandidate: ContentElement = document.body;
-  let bestLength = getTextLength(bestCandidate);
+  let bestCandidate: ContentElement | null = null;
+  let bestLength = -1;
 
   for (const candidate of candidates) {
     const length = getTextLength(candidate);
@@ -138,7 +138,7 @@ function pickBestContentRoot(document: ParsedHtmlDocument): ContentElement {
     }
   }
 
-  return bestCandidate;
+  return bestCandidate ?? document.body;
 }
 
 function prependTitle(markdown: string, title: string | null): string {
