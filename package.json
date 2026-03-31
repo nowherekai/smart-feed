@@ -1,25 +1,39 @@
 {
   "name": "smart-feed",
-  "module": "src/index.ts",
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun --watch src/index.ts",
+    "dev": "bun run dev:web",
+    "dev:web": "next dev",
+    "dev:worker": "bun --watch src/workers/index.ts",
+    "worker": "bun src/workers/index.ts",
     "check": "bunx tsc --noEmit",
     "db:generate": "bunx drizzle-kit generate",
     "db:migrate": "bunx drizzle-kit migrate",
     "db:push": "bunx drizzle-kit push",
     "db:studio": "bunx drizzle-kit studio",
-    "build": "bun build src/index.ts --outdir dist",
+    "build:web": "next build",
+    "build:worker": "bun build ./src/workers/index.ts --target bun --outdir dist/worker",
+    "build": "bun run build:web && bun run build:worker",
+    "start": "next start",
     "test": "bun test"
   },
   "dependencies": {
+    "bullmq": "latest",
     "drizzle-orm": "^0.45.2",
-    "postgres": "^3.4.8"
+    "ioredis": "latest",
+    "next": "latest",
+    "postgres": "^3.4.8",
+    "react": "latest",
+    "react-dom": "latest"
   },
   "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
     "@types/bun": "latest",
     "drizzle-kit": "^0.31.10",
+    "postcss": "latest",
     "typescript": "^6"
   }
 }

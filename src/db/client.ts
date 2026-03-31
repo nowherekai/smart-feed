@@ -1,13 +1,49 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-import { databaseEnv } from "./env";
+import { getDatabaseEnv } from "./env";
 import * as schema from "./schema";
 
-export const sqlClient = postgres(databaseEnv.databaseUrl, {
-  ssl: databaseEnv.databaseSsl ? "require" : false,
-});
+function createSqlClient() {
+  const databaseEnv = getDatabaseEnv();
 
-export const db = drizzle(sqlClient, { schema });
+  return postgres(databaseEnv.databaseUrl, {
+    ssl: databaseEnv.databaseSsl ? "require" : false,
+  });
+}
 
-export type Database = typeof db;
+function createDb() {
+  return drizzle(getSqlClient(), { schema });
+}
+
+type SqlClient = ReturnType<typeof createSqlClient>;
+type Database = ReturnType<typeof createDb>;
+
+let cachedSqlClient: SqlClient | null = null;
+let cachedDb: Database | null = null;
+
+export function getSqlClient(): SqlClient {
+  cachedSqlClient ??= createSqlClient();
+  return cachedSqlClient;
+}
+
+export function getDb(): Database {
+  cachedDb ??= createDb();
+  return cachedDb;
+}
+
+function createLazyProxy<T extends object>(factory: () => T): T {
+  return new Proxy({} as T, {
+    get(_target, property, receiver) {
+      const target = factory();
+      const value = Reflect.get(target, property, receiver);
+
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+export const sqlClient = createLazyProxy(getSqlClient);
+export const db = createLazyProxy(getDb);
+
+export type { Database };
