@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["dist", ".next", "drizzle/meta", "bun.lock"]
+    "includes": ["**", "!!**/dist", "!!.next", "!drizzle/meta", "!bun.lock"]
   },
   "formatter": {
     "enabled": true,
