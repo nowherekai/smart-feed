@@ -162,6 +162,7 @@ test("openrouter mode assembles provider config and delegates structured generat
 });
 
 test("openrouter mode can generate heavy summary via injected structured generator", async () => {
+  let providerFactoryCallCount = 0;
   const client = createAiClient({
     env: {
       aiBasicModel: "openai/gpt-4o-mini",
@@ -179,6 +180,20 @@ test("openrouter mode can generate heavy summary via injected structured generat
       system: string;
     }) => {
       const { schema } = input;
+
+      if (input.schemaName === "basic_analysis") {
+        return {
+          object: schema.parse({
+            categories: ["ai"],
+            entities: ["Example Feed"],
+            keywords: ["ai", "platform"],
+            language: "zh",
+            sentiment: "neutral",
+            valueScore: 7,
+          }) as TOutput,
+        };
+      }
+
       return {
         object: schema.parse({
           evidenceSnippet: "AI 平台发布了新的模型评测结果",
@@ -188,15 +203,21 @@ test("openrouter mode can generate heavy summary via injected structured generat
         }) as TOutput,
       };
     },
-    openRouterProviderFactory: () => ({
-      chat(modelId: string) {
-        return { modelId };
-      },
-    }),
+    openRouterProviderFactory: () => {
+      providerFactoryCallCount += 1;
+
+      return {
+        chat(modelId: string) {
+          return { modelId };
+        },
+      };
+    },
   });
 
   const result = await client.runHeavySummary(baseInput);
+  await client.runBasicAnalysis(baseInput);
 
   expect(result.points).toHaveLength(3);
   expect(result.evidenceSnippet).toContain("模型评测结果");
+  expect(providerFactoryCallCount).toBe(1);
 });

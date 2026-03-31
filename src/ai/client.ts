@@ -308,6 +308,7 @@ function createAiClient(deps: AiClientDeps = {}) {
   const env = deps.env ?? getAppEnv();
   const generateStructuredObject = deps.generateStructuredObject ?? defaultGenerateStructuredObject;
   const openRouterProviderFactory = deps.openRouterProviderFactory ?? defaultOpenRouterProviderFactory;
+  let cachedOpenRouterProvider: ReturnType<OpenRouterProviderFactory> | null = null;
 
   function getAiRuntimeState(): AiRuntimeState {
     return getRuntimeStateFromEnv(env);
@@ -323,6 +324,16 @@ function createAiClient(deps: AiClientDeps = {}) {
     return runtimeState;
   }
 
+  function getOpenRouterProvider(): ReturnType<OpenRouterProviderFactory> {
+    cachedOpenRouterProvider ??= openRouterProviderFactory({
+      apiKey: resolveOpenRouterApiKey(env),
+      baseURL: env.openRouterBaseUrl,
+      name: "openrouter",
+    });
+
+    return cachedOpenRouterProvider;
+  }
+
   async function runStructuredPrompt<TOutput>(options: {
     buildDummyOutput: (input: AiPromptInput) => TOutput;
     input: AiPromptInput;
@@ -336,11 +347,7 @@ function createAiClient(deps: AiClientDeps = {}) {
       return promptDefinition.schema.parse(buildDummyOutput(input));
     }
 
-    const provider = openRouterProviderFactory({
-      apiKey: resolveOpenRouterApiKey(env),
-      baseURL: env.openRouterBaseUrl,
-      name: "openrouter",
-    });
+    const provider = getOpenRouterProvider();
     const messages = promptDefinition.buildMessages(input);
     const result = await generateStructuredObject({
       model: provider.chat(resolveModelId(kind, env)),
