@@ -48,10 +48,13 @@ export function getDatabaseEnv(): Readonly<DatabaseEnv> {
   return cachedDatabaseEnv;
 }
 
-export const databaseEnv = new Proxy({} as Readonly<DatabaseEnv>, {
-  get(_target, property) {
-    return getDatabaseEnv()[property as keyof DatabaseEnv];
+export const databaseEnv = {
+  get databaseUrl() {
+    return getDatabaseEnv().databaseUrl;
   },
-});
+  get databaseSsl() {
+    return getDatabaseEnv().databaseSsl;
+  },
+} satisfies Readonly<DatabaseEnv>;
 
 export type { DatabaseEnv };
