@@ -28,7 +28,7 @@ function createImportHarness() {
     sourceId: string | null;
     errorMessage: string | null;
   }> = [];
-  const enqueued: Array<{ sourceId: string; importRunId: string; trigger: "source.import" }> = [];
+  const enqueued: Array<{ importRunId?: string; sourceId: string; trigger: "source.import" | "scheduler" }> = [];
   const sources = new Map<string, { id: string; identifier: string }>();
 
   return {

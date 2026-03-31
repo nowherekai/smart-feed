@@ -26,7 +26,9 @@ test("verifyAndPrepareRssSource normalizes RSS URL and extracts metadata", async
     title: "Example Feed",
     siteUrl: "https://example.com",
   });
-  expect(new Headers(capturedRequest?.headers).get("user-agent")).toBe("smart-feed/1.0 (+https://github.com/nowherekai/smart-feed)");
+  expect(new Headers(capturedRequest?.headers).get("user-agent")).toBe(
+    "smart-feed/1.0 (+https://github.com/nowherekai/smart-feed)",
+  );
 });
 
 test("verifyAndPrepareRssSource rejects unsupported protocols", async () => {
