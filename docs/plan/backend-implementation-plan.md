@@ -28,7 +28,7 @@
 
 - [x] Task 0: 基础设施与工具层
 - [x] Task 1: 来源接入 Pipeline
-- [ ] Task 2: RSS 抓取与内容入库
+- [x] Task 2: RSS 抓取与内容入库
 - [ ] Task 3: HTML 抓取与 Markdown 标准化
 - [ ] Task 4: AI 适配层
 - [ ] Task 5: 轻量分析与深度摘要
@@ -211,7 +211,7 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 
 4. **syncCursor 更新**:
    - 更新 source.syncCursor 中的 etag, lastModified, lastSeenExternalId 等
-   - 更新 source.lastSyncedAt
+   - 更新 source.lastSuccessfulSyncAt
 
 **验收标准**:
 - [ ] 可解析标准 RSS 2.0 和 Atom 1.0 feed

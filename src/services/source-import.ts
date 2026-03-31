@@ -3,6 +3,7 @@ import { getDb, sourceImportRunItems, sourceImportRuns } from "../db";
 import { type ParsedOpmlSource, parseOpml } from "../parsers";
 import { createQueue, jobNames } from "../queue";
 import { logger } from "../utils";
+import type { SourceFetchJobData } from "./content";
 import {
   createSource,
   findSourceByIdentifier,
@@ -29,12 +30,6 @@ export type SourceImportJobData =
       mode: "opml";
       opml: string;
     };
-
-export type SourceFetchJobData = {
-  sourceId: string;
-  importRunId: string;
-  trigger: "source.import";
-};
 
 export type SourceImportItemOutcome = {
   inputUrl: string;
