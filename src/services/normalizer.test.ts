@@ -68,3 +68,16 @@ test("normalizeRawContent truncates markdown to 50KB", () => {
   expect(new TextEncoder().encode(result.markdown).length).toBeLessThanOrEqual(50 * 1024);
   expect(result.markdown).toContain("[内容过长，已截断]");
 });
+
+test("normalizeRawContent fallback truncation keeps byte limit and suffix for a single huge paragraph", () => {
+  const result = normalizeRawContent({
+    format: "text",
+    originalUrl: "https://example.com/post",
+    rawBody: "超长段落".repeat(20_000),
+    title: "Huge Paragraph",
+  });
+
+  expect(result.truncated).toBeTrue();
+  expect(new TextEncoder().encode(result.markdown).length).toBeLessThanOrEqual(50 * 1024);
+  expect(result.markdown).toContain("[内容过长，已截断]");
+});

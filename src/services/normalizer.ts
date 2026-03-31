@@ -193,6 +193,7 @@ function truncateMarkdown(markdown: string): NormalizeRawContentResult {
   const paragraphs = markdown.split(/\n{2,}/);
   const kept: string[] = [];
   const suffix = "\n\n[内容过长，已截断]";
+  const suffixBytes = encoder.encode(suffix).length;
 
   for (const paragraph of paragraphs) {
     const nextMarkdown = kept.length === 0 ? paragraph : `${kept.join("\n\n")}\n\n${paragraph}`;
@@ -204,11 +205,27 @@ function truncateMarkdown(markdown: string): NormalizeRawContentResult {
     kept.push(paragraph);
   }
 
-  const truncatedMarkdown =
-    kept.length > 0 ? `${kept.join("\n\n")}${suffix}` : markdown.slice(0, MAX_MARKDOWN_BYTES / 2);
+  if (kept.length > 0) {
+    return {
+      markdown: `${kept.join("\n\n")}${suffix}`,
+      truncated: true,
+    };
+  }
+
+  let fallbackMarkdown = "";
+
+  for (const character of markdown) {
+    const nextMarkdown = `${fallbackMarkdown}${character}`;
+
+    if (encoder.encode(nextMarkdown).length + suffixBytes > MAX_MARKDOWN_BYTES) {
+      break;
+    }
+
+    fallbackMarkdown = nextMarkdown;
+  }
 
   return {
-    markdown: truncatedMarkdown,
+    markdown: `${fallbackMarkdown}${suffix}`,
     truncated: true,
   };
 }
