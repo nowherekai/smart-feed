@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ZodType } from "zod";
 import { AiConfigurationError, AiProviderUnavailableError, createAiClient, resolveAiTaskConfig } from "./client";
-import type { BasicAnalysis, HeavySummary } from "./schemas";
 
 const baseInput = {
   cleanedMd: "AI 平台发布了新的模型评测结果，并讨论了部署成本、架构约束和后续路线图。",

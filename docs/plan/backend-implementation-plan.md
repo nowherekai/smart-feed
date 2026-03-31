@@ -18,7 +18,7 @@
 | BullMQ 队列配置 | ✅ | 8 个 Job 类型，重试策略，并发度 |
 | Redis 连接 | ✅ | 单例连接，环境变量配置 |
 | Worker 入口 | ✅ | 启动/优雅关闭，事件监听 |
-| Pipeline Handlers | ⬜ | **全部 8 个为占位符 (placeholder)** |
+| Pipeline Handlers | 🟡 | `source.import`、`source.fetch`、`content.fetch-html`、`content.normalize`、`content.analyze.basic`、`content.analyze.heavy` 已有真实实现；`digest.compose`、`digest.deliver` 仍为占位 |
 
 ### 待实现 (本计划范围)
 
@@ -31,7 +31,7 @@
 - [x] Task 2: RSS 抓取与内容入库
 - [x] Task 3: HTML 抓取与 Markdown 标准化
 - [x] Task 4: AI 适配层
-- [ ] Task 5: 轻量分析与深度摘要
+- [x] Task 5: 轻量分析与深度摘要
 - [ ] Task 6: Digest 编排
 - [ ] Task 7: Digest 投递
 - [ ] Task 8: 调度层
@@ -350,6 +350,8 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 
 **目标**: 实现 `content.analyze.basic` 和 `content.analyze.heavy` handler
 
+> 2026-03-31 更新：`content.analyze.basic` 与 `content.analyze.heavy` 均已接入统一 runtime。`basic` 在 `value_score > threshold` 时会继续 enqueue `heavy`；`heavy` 完成后写入 full/rejected `analysis_records` 并结束当前 content pipeline。
+
 **交付文件**:
 
 | 文件路径 | 说明 |
@@ -363,11 +365,11 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 
 1. **content.analyze.basic**:
    - 缓存检查: 查 `(content_id, model_strategy, "basic-analysis-v1")` 是否已存在
-   - 命中缓存 → 跳过，直接检查是否需要入队 heavy
+   - 命中缓存 → 低价值内容直接完成当前 content pipeline；高价值内容继续进入 heavy
    - 未命中 → 调用 AI 轻量分析
    - 存储 analysis_record (status=basic)
    - 冗余写入 source_id, source_name, original_url, source_trace_id, content_trace_id
-   - `value_score > THRESHOLD(6)` → 入队 content.analyze.heavy
+   - `value_score > THRESHOLD(6)` → 入队 `content.analyze.heavy`
    - `value_score <= THRESHOLD(6)` → 直接更新 content_items.status = "analyzed"（低价值内容到此完结，不进入深度摘要）
 
 2. **content.analyze.heavy**:
