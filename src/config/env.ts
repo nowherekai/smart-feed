@@ -4,6 +4,7 @@ type AppEnv = {
   digestTimeZone: string;
   digestSendHour: number;
   digestMaxLookbackHours: number;
+  emailDeliveryEnabled: boolean;
   valueScoreThreshold: number;
   aiProvider: AiProvider | null;
   openRouterApiKey: string | null;
@@ -32,6 +33,7 @@ const APP_ENV_KEYS = [
   "SMART_FEED_DIGEST_TIMEZONE",
   "SMART_FEED_DIGEST_SEND_HOUR",
   "SMART_FEED_DIGEST_MAX_LOOKBACK_HOURS",
+  "SMART_FEED_EMAIL_DELIVERY_ENABLED",
   "SMART_FEED_VALUE_SCORE_THRESHOLD",
   "SMART_FEED_AI_PROVIDER",
   "OPENROUTER_API_KEY",
@@ -66,6 +68,32 @@ function parseOptionalAiProvider(value: string | undefined): AiProvider | null {
   }
 
   throw new Error(`[config/env] SMART_FEED_AI_PROVIDER must be one of "openrouter" or "dummy".`);
+}
+
+function parseBooleanEnv(name: string, rawValue: string | undefined, defaultValue: boolean): boolean {
+  const normalized = rawValue?.trim().toLowerCase();
+
+  if (!normalized) {
+    return defaultValue;
+  }
+
+  if (normalized === "true" || normalized === "1") {
+    return true;
+  }
+
+  if (normalized === "false" || normalized === "0") {
+    return false;
+  }
+
+  throw new Error(`[config/env] ${name} must be a boolean, received "${rawValue}".`);
+}
+
+function requireStringEnv(name: string, value: string | null): string {
+  if (!value) {
+    throw new Error(`[config/env] ${name} is required when SMART_FEED_EMAIL_DELIVERY_ENABLED is true.`);
+  }
+
+  return value;
 }
 
 function assertValidTimeZone(name: string, timeZone: string): string {
@@ -134,6 +162,33 @@ export function loadAppEnv(): AppEnv {
     "SMART_FEED_DIGEST_TIMEZONE",
     parseOptionalString(process.env.SMART_FEED_DIGEST_TIMEZONE) ?? timeZone,
   );
+  const emailDeliveryEnabled = parseBooleanEnv(
+    "SMART_FEED_EMAIL_DELIVERY_ENABLED",
+    process.env.SMART_FEED_EMAIL_DELIVERY_ENABLED,
+    false,
+  );
+  const smtpHost = parseOptionalString(process.env.SMTP_HOST);
+  const smtpPort = parseOptionalIntegerEnv("SMTP_PORT", process.env.SMTP_PORT, {
+    min: 1,
+    max: 65535,
+  });
+  const smtpUser = parseOptionalString(process.env.SMTP_USER);
+  const smtpPass = parseOptionalString(process.env.SMTP_PASS);
+  const smtpFrom = parseOptionalString(process.env.SMTP_FROM);
+  const smtpTo = parseOptionalString(process.env.SMTP_TO);
+
+  if (emailDeliveryEnabled) {
+    requireStringEnv("SMTP_HOST", smtpHost);
+
+    if (smtpPort === null) {
+      throw new Error("[config/env] SMTP_PORT is required when SMART_FEED_EMAIL_DELIVERY_ENABLED is true.");
+    }
+
+    requireStringEnv("SMTP_USER", smtpUser);
+    requireStringEnv("SMTP_PASS", smtpPass);
+    requireStringEnv("SMTP_FROM", smtpFrom);
+    requireStringEnv("SMTP_TO", smtpTo);
+  }
 
   return {
     timeZone,
@@ -156,6 +211,7 @@ export function loadAppEnv(): AppEnv {
       DEFAULT_DIGEST_MAX_LOOKBACK_HOURS,
       { min: 1 },
     ),
+    emailDeliveryEnabled,
     valueScoreThreshold: parseIntegerEnv(
       "SMART_FEED_VALUE_SCORE_THRESHOLD",
       process.env.SMART_FEED_VALUE_SCORE_THRESHOLD,
@@ -167,15 +223,12 @@ export function loadAppEnv(): AppEnv {
     openRouterBaseUrl: parseOptionalString(process.env.OPENROUTER_BASE_URL) ?? DEFAULT_OPENROUTER_BASE_URL,
     aiBasicModel: parseOptionalString(process.env.SMART_FEED_AI_BASIC_MODEL),
     aiHeavyModel: parseOptionalString(process.env.SMART_FEED_AI_HEAVY_MODEL),
-    smtpHost: parseOptionalString(process.env.SMTP_HOST),
-    smtpPort: parseOptionalIntegerEnv("SMTP_PORT", process.env.SMTP_PORT, {
-      min: 1,
-      max: 65535,
-    }),
-    smtpUser: parseOptionalString(process.env.SMTP_USER),
-    smtpPass: parseOptionalString(process.env.SMTP_PASS),
-    smtpFrom: parseOptionalString(process.env.SMTP_FROM),
-    smtpTo: parseOptionalString(process.env.SMTP_TO),
+    smtpHost,
+    smtpPort,
+    smtpUser,
+    smtpPass,
+    smtpFrom,
+    smtpTo,
   };
 }
 
@@ -205,6 +258,9 @@ export const appEnv = {
   },
   get digestMaxLookbackHours() {
     return getAppEnv().digestMaxLookbackHours;
+  },
+  get emailDeliveryEnabled() {
+    return getAppEnv().emailDeliveryEnabled;
   },
   get valueScoreThreshold() {
     return getAppEnv().valueScoreThreshold;

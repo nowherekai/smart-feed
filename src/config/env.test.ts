@@ -8,6 +8,7 @@ const APP_ENV_KEYS = [
   "SMART_FEED_DIGEST_TIMEZONE",
   "SMART_FEED_DIGEST_SEND_HOUR",
   "SMART_FEED_DIGEST_MAX_LOOKBACK_HOURS",
+  "SMART_FEED_EMAIL_DELIVERY_ENABLED",
   "SMART_FEED_VALUE_SCORE_THRESHOLD",
   "SMART_FEED_AI_PROVIDER",
   "OPENROUTER_API_KEY",
@@ -60,6 +61,7 @@ test("loadAppEnv applies defaults and optional nulls", () => {
     expect(env.digestTimeZone).toBe("Asia/Shanghai");
     expect(env.digestSendHour).toBe(8);
     expect(env.digestMaxLookbackHours).toBe(48);
+    expect(env.emailDeliveryEnabled).toBe(false);
     expect(env.valueScoreThreshold).toBe(6);
     expect(env.aiProvider).toBeNull();
     expect(env.openRouterApiKey).toBeNull();
@@ -79,6 +81,7 @@ test("loadAppEnv reads explicit overrides and appEnv proxies them", () => {
       SMART_FEED_DIGEST_TIMEZONE: "Europe/Berlin",
       SMART_FEED_DIGEST_SEND_HOUR: "6",
       SMART_FEED_DIGEST_MAX_LOOKBACK_HOURS: "12",
+      SMART_FEED_EMAIL_DELIVERY_ENABLED: "true",
       SMART_FEED_VALUE_SCORE_THRESHOLD: "8",
       SMART_FEED_AI_PROVIDER: "openrouter",
       OPENROUTER_API_KEY: "test-key",
@@ -100,6 +103,7 @@ test("loadAppEnv reads explicit overrides and appEnv proxies them", () => {
       expect(env.timeWindowHours).toBe(24);
       expect(env.digestSendHour).toBe(6);
       expect(env.digestMaxLookbackHours).toBe(12);
+      expect(env.emailDeliveryEnabled).toBe(true);
       expect(env.valueScoreThreshold).toBe(8);
       expect(env.aiProvider).toBe("openrouter");
       expect(env.openRouterBaseUrl).toBe("https://openrouter.example.com/api/v1");
@@ -187,6 +191,45 @@ test("loadAppEnv rejects invalid numeric and timezone values", () => {
     },
     () => {
       expect(() => loadAppEnv()).toThrow('SMART_FEED_AI_PROVIDER must be one of "openrouter" or "dummy"');
+    },
+  );
+
+  withEnv(
+    {
+      SMART_FEED_EMAIL_DELIVERY_ENABLED: "true",
+      SMTP_HOST: undefined,
+      SMTP_PORT: "587",
+      SMTP_USER: "user",
+      SMTP_PASS: "pass",
+      SMTP_FROM: "from@example.com",
+      SMTP_TO: "to@example.com",
+    },
+    () => {
+      expect(() => loadAppEnv()).toThrow("SMTP_HOST is required when SMART_FEED_EMAIL_DELIVERY_ENABLED is true.");
+    },
+  );
+
+  withEnv(
+    {
+      SMART_FEED_EMAIL_DELIVERY_ENABLED: "true",
+      SMTP_HOST: "smtp.example.com",
+      SMTP_PORT: undefined,
+      SMTP_USER: "user",
+      SMTP_PASS: "pass",
+      SMTP_FROM: "from@example.com",
+      SMTP_TO: "to@example.com",
+    },
+    () => {
+      expect(() => loadAppEnv()).toThrow("SMTP_PORT is required when SMART_FEED_EMAIL_DELIVERY_ENABLED is true.");
+    },
+  );
+
+  withEnv(
+    {
+      SMART_FEED_EMAIL_DELIVERY_ENABLED: "enabled",
+    },
+    () => {
+      expect(() => loadAppEnv()).toThrow("SMART_FEED_EMAIL_DELIVERY_ENABLED must be a boolean");
     },
   );
 });
