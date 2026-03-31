@@ -40,7 +40,7 @@ type ExecuteDigestPipelineStepOptions<
 };
 
 function serialize(value: unknown): string | null {
-  if (value === undefined) {
+  if (value === undefined || value === null) {
     return null;
   }
 
