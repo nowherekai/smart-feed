@@ -20,7 +20,7 @@ type GenerateStructuredObject = <TOutput>(input: {
   schemaDescription: string;
   schemaName: string;
   system: string;
-}) => Promise<{ object: unknown }>;
+}) => Promise<{ object: TOutput }>;
 
 type OpenRouterProviderFactory = (config: { apiKey: string; baseURL: string; name: "openrouter" }) => {
   chat: (modelId: string) => unknown;

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { ZodType } from "zod";
 import { AiConfigurationError, AiProviderUnavailableError, createAiClient, resolveAiTaskConfig } from "./client";
 import type { BasicAnalysis, HeavySummary } from "./schemas";
 
@@ -104,7 +105,15 @@ test("openrouter mode assembles provider config and delegates structured generat
       openRouterApiKey: "test-key",
       openRouterBaseUrl: "https://openrouter.ai/api/v1",
     },
-    generateStructuredObject: async ({ model, prompt, schema, system }) => {
+    generateStructuredObject: async <TOutput>(input: {
+      model: unknown;
+      prompt: string;
+      schema: ZodType<TOutput>;
+      schemaDescription: string;
+      schemaName: string;
+      system: string;
+    }) => {
+      const { model, prompt, schema, system } = input;
       const modelRecord = model as { modelId: string };
       modelIds.push(modelRecord.modelId);
       expect(system).toContain("smart-feed");
@@ -118,7 +127,7 @@ test("openrouter mode assembles provider config and delegates structured generat
           language: "zh",
           sentiment: "neutral",
           valueScore: 8,
-        }) as BasicAnalysis,
+        }) as TOutput,
       };
     },
     openRouterProviderFactory: (config) => {
@@ -161,14 +170,22 @@ test("openrouter mode can generate heavy summary via injected structured generat
       openRouterApiKey: "test-key",
       openRouterBaseUrl: "https://openrouter.ai/api/v1",
     },
-    generateStructuredObject: async ({ schema }) => {
+    generateStructuredObject: async <TOutput>(input: {
+      model: unknown;
+      prompt: string;
+      schema: ZodType<TOutput>;
+      schemaDescription: string;
+      schemaName: string;
+      system: string;
+    }) => {
+      const { schema } = input;
       return {
         object: schema.parse({
           evidenceSnippet: "AI 平台发布了新的模型评测结果",
           oneline: "Example Feed：AI 平台更新说明",
           points: ["模型评测结果更新", "讨论部署成本", "提到后续路线图"],
           reason: "这篇文章直接影响后续选型。",
-        }) as HeavySummary,
+        }) as TOutput,
       };
     },
     openRouterProviderFactory: () => ({
