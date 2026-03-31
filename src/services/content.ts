@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { type AppEnv, getAppEnv } from "../config";
 import { contentItemRaws, contentItems, getDb, sources } from "../db";
 import { type ParsedRssFeed, type ParsedRssItem, parseRssFeed } from "../parsers";
+import { createCompletedStepResult, createFailedStepResult, type PipelineStepResult } from "../pipeline/types";
 import { createQueue, jobNames } from "../queue";
 import { getEffectiveTime, isInTimeWindow, logger } from "../utils";
 import { fetchPageHtml, getRawBodyExcerptCandidate } from "./html-fetcher";
@@ -34,17 +35,26 @@ export type SourceFetchJobData = {
 
 export type ContentFetchHtmlJobData = {
   contentId: string;
+  pipelineRunId?: string;
   trigger: "source.fetch";
 };
 
 export type ContentNormalizeJobData = {
   contentId: string;
+  pipelineRunId?: string;
   trigger: "content.fetch-html";
 };
 
 export type ContentAnalyzeBasicJobData = {
   contentId: string;
+  pipelineRunId?: string;
   trigger: "content.normalize";
+};
+
+export type ContentAnalyzeHeavyJobData = {
+  contentId: string;
+  pipelineRunId?: string;
+  trigger: "content.analyze.basic";
 };
 
 export type SourceFetchSummary = {
@@ -57,19 +67,15 @@ export type SourceFetchSummary = {
   status: "completed" | "failed";
 };
 
-export type ContentFetchHtmlSummary = {
+export type ContentFetchHtmlPayload = {
   contentId: string;
   fetched: boolean;
-  normalizeQueued: boolean;
-  status: "completed";
   usedFallback: boolean;
 };
 
-export type ContentNormalizeSummary = {
-  analyzeQueued: boolean;
+export type ContentNormalizePayload = {
   contentId: string;
   markdownBytes: number;
-  status: "completed";
   truncated: boolean;
 };
 
@@ -89,7 +95,6 @@ export type SourceFetchDeps = {
 };
 
 export type ContentFetchHtmlDeps = {
-  enqueueContentNormalize?: (data: ContentNormalizeJobData) => Promise<void>;
   fetchHtml?: (url: string) => Promise<string>;
   getContentWithRawById?: (contentId: string) => Promise<ContentWithRaw | null>;
   updateContentItem?: (contentId: string, data: ContentItemUpdate) => Promise<void>;
@@ -97,7 +102,6 @@ export type ContentFetchHtmlDeps = {
 };
 
 export type ContentNormalizeDeps = {
-  enqueueContentAnalyzeBasic?: (data: ContentAnalyzeBasicJobData) => Promise<void>;
   getContentWithRawById?: (contentId: string) => Promise<ContentWithRaw | null>;
   normalizeContent?: typeof normalizeRawContent;
   updateContentItem?: (contentId: string, data: ContentItemUpdate) => Promise<void>;
@@ -217,16 +221,6 @@ async function createContentItemRaw(data: NewContentItemRaw): Promise<void> {
 async function enqueueContentFetchHtml(data: ContentFetchHtmlJobData): Promise<void> {
   const queue = createQueue<ContentFetchHtmlJobData>();
   await queue.add(jobNames.contentFetchHtml, data);
-}
-
-async function enqueueContentNormalize(data: ContentNormalizeJobData): Promise<void> {
-  const queue = createQueue<ContentNormalizeJobData>();
-  await queue.add(jobNames.contentNormalize, data);
-}
-
-async function enqueueContentAnalyzeBasic(data: ContentAnalyzeBasicJobData): Promise<void> {
-  const queue = createQueue<ContentAnalyzeBasicJobData>();
-  await queue.add(jobNames.contentAnalyzeBasic, data);
 }
 
 function toFailureMessage(error: unknown): string {
@@ -360,7 +354,6 @@ function buildSourceFetchDeps(overrides: SourceFetchDeps): Required<SourceFetchD
 
 function buildContentFetchHtmlDeps(overrides: ContentFetchHtmlDeps): Required<ContentFetchHtmlDeps> {
   return {
-    enqueueContentNormalize: overrides.enqueueContentNormalize ?? enqueueContentNormalize,
     fetchHtml: overrides.fetchHtml ?? fetchPageHtml,
     getContentWithRawById: overrides.getContentWithRawById ?? getContentWithRawById,
     updateContentItem: overrides.updateContentItem ?? updateContentItem,
@@ -370,7 +363,6 @@ function buildContentFetchHtmlDeps(overrides: ContentFetchHtmlDeps): Required<Co
 
 function buildContentNormalizeDeps(overrides: ContentNormalizeDeps): Required<ContentNormalizeDeps> {
   return {
-    enqueueContentAnalyzeBasic: overrides.enqueueContentAnalyzeBasic ?? enqueueContentAnalyzeBasic,
     getContentWithRawById: overrides.getContentWithRawById ?? getContentWithRawById,
     normalizeContent: overrides.normalizeContent ?? normalizeRawContent,
     updateContentItem: overrides.updateContentItem ?? updateContentItem,
@@ -557,16 +549,37 @@ export async function runSourceFetch(
 export async function runContentFetchHtml(
   jobData: ContentFetchHtmlJobData,
   overrides: ContentFetchHtmlDeps = {},
-): Promise<ContentFetchHtmlSummary> {
+): Promise<PipelineStepResult<ContentFetchHtmlPayload, ContentNormalizeJobData>> {
   const deps = buildContentFetchHtmlDeps(overrides);
   const record = await deps.getContentWithRawById(jobData.contentId);
 
   if (!record) {
-    throw new Error(`[services/content] Content "${jobData.contentId}" not found.`);
+    return createFailedStepResult({
+      message: `[services/content] Content "${jobData.contentId}" not found.`,
+      payload: {
+        contentId: jobData.contentId,
+        fetched: false,
+        usedFallback: false,
+      },
+    });
   }
 
   if (!record.raw) {
-    throw new Error(`[services/content] Raw content for "${jobData.contentId}" not found.`);
+    const message = `[services/content] Raw content for "${jobData.contentId}" not found.`;
+
+    await deps.updateContentItem(record.content.id, {
+      processingError: message,
+      status: "failed",
+    });
+
+    return createFailedStepResult({
+      message,
+      payload: {
+        contentId: record.content.id,
+        fetched: false,
+        usedFallback: false,
+      },
+    });
   }
 
   let fetched = false;
@@ -594,7 +607,15 @@ export async function runContentFetchHtml(
         processingError: errorMessage,
         status: "failed",
       });
-      throw error;
+
+      return createFailedStepResult({
+        message: errorMessage,
+        payload: {
+          contentId: record.content.id,
+          fetched: false,
+          usedFallback: false,
+        },
+      });
     }
 
     usedFallback = true;
@@ -610,33 +631,58 @@ export async function runContentFetchHtml(
     });
   }
 
-  await deps.enqueueContentNormalize({
-    contentId: record.content.id,
-    trigger: "content.fetch-html",
+  return createCompletedStepResult({
+    message: usedFallback ? "content.fetch-html completed with RSS fallback" : null,
+    nextStep: {
+      data: {
+        contentId: record.content.id,
+        trigger: "content.fetch-html",
+      },
+      jobName: jobNames.contentNormalize,
+    },
+    outcome: usedFallback ? "completed_with_fallback" : "completed",
+    payload: {
+      contentId: record.content.id,
+      fetched,
+      usedFallback,
+    },
   });
-
-  return {
-    contentId: record.content.id,
-    fetched,
-    normalizeQueued: true,
-    status: "completed",
-    usedFallback,
-  };
 }
 
 export async function runContentNormalize(
   jobData: ContentNormalizeJobData,
   overrides: ContentNormalizeDeps = {},
-): Promise<ContentNormalizeSummary> {
+): Promise<PipelineStepResult<ContentNormalizePayload, ContentAnalyzeBasicJobData>> {
   const deps = buildContentNormalizeDeps(overrides);
   const record = await deps.getContentWithRawById(jobData.contentId);
 
   if (!record) {
-    throw new Error(`[services/content] Content "${jobData.contentId}" not found.`);
+    return createFailedStepResult({
+      message: `[services/content] Content "${jobData.contentId}" not found.`,
+      payload: {
+        contentId: jobData.contentId,
+        markdownBytes: 0,
+        truncated: false,
+      },
+    });
   }
 
   if (!record.raw) {
-    throw new Error(`[services/content] Raw content for "${jobData.contentId}" not found.`);
+    const message = `[services/content] Raw content for "${jobData.contentId}" not found.`;
+
+    await deps.updateContentItem(record.content.id, {
+      processingError: message,
+      status: "failed",
+    });
+
+    return createFailedStepResult({
+      message,
+      payload: {
+        contentId: record.content.id,
+        markdownBytes: 0,
+        truncated: false,
+      },
+    });
   }
 
   try {
@@ -653,23 +699,36 @@ export async function runContentNormalize(
       processingError: null,
       status: "normalized",
     });
-    await deps.enqueueContentAnalyzeBasic({
-      contentId: record.content.id,
-      trigger: "content.normalize",
-    });
 
-    return {
-      analyzeQueued: true,
-      contentId: record.content.id,
-      markdownBytes,
-      status: "completed",
-      truncated: normalized.truncated,
-    };
+    return createCompletedStepResult({
+      nextStep: {
+        data: {
+          contentId: record.content.id,
+          trigger: "content.normalize",
+        },
+        jobName: jobNames.contentAnalyzeBasic,
+      },
+      payload: {
+        contentId: record.content.id,
+        markdownBytes,
+        truncated: normalized.truncated,
+      },
+    });
   } catch (error) {
+    const errorMessage = toFailureMessage(error);
+
     await deps.updateContentItem(record.content.id, {
-      processingError: toFailureMessage(error),
+      processingError: errorMessage,
       status: "failed",
     });
-    throw error;
+
+    return createFailedStepResult({
+      message: errorMessage,
+      payload: {
+        contentId: record.content.id,
+        markdownBytes: 0,
+        truncated: false,
+      },
+    });
   }
 }

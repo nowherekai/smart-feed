@@ -118,8 +118,6 @@ function createFetchHarness(sourceOverrides: Partial<SourceFetchSource> = {}) {
 type ContentFetchRecord = NonNullable<Awaited<ReturnType<NonNullable<ContentFetchHtmlDeps["getContentWithRawById"]>>>>;
 type ContentUpdateInput = Parameters<NonNullable<ContentFetchHtmlDeps["updateContentItem"]>>[1];
 type ContentRawUpdateInput = Parameters<NonNullable<ContentFetchHtmlDeps["updateContentItemRaw"]>>[1];
-type EnqueueNormalizeInput = Parameters<NonNullable<ContentFetchHtmlDeps["enqueueContentNormalize"]>>[0];
-type EnqueueAnalyzeInput = Parameters<NonNullable<ContentNormalizeDeps["enqueueContentAnalyzeBasic"]>>[0];
 type NormalizeResult = ReturnType<NonNullable<ContentNormalizeDeps["normalizeContent"]>>;
 
 function createContentRecordHarness(
@@ -128,8 +126,6 @@ function createContentRecordHarness(
 ) {
   const contentUpdates: ContentUpdateInput[] = [];
   const rawUpdates: ContentRawUpdateInput[] = [];
-  const normalizeJobs: EnqueueNormalizeInput[] = [];
-  const analyzeJobs: EnqueueAnalyzeInput[] = [];
   const record: ContentFetchRecord = {
     content: {
       author: "Alice",
@@ -166,15 +162,10 @@ function createContentRecordHarness(
   };
 
   return {
-    analyzeJobs,
     contentUpdates,
-    normalizeJobs,
     rawUpdates,
     record,
     fetchDeps: {
-      async enqueueContentNormalize(data: EnqueueNormalizeInput) {
-        normalizeJobs.push(data);
-      },
       async fetchHtml() {
         return "<html><body><article><p>full article</p><p>second paragraph</p><p>third paragraph</p></article></body></html>";
       },
@@ -189,9 +180,6 @@ function createContentRecordHarness(
       },
     } satisfies ContentFetchHtmlDeps,
     normalizeDeps: {
-      async enqueueContentAnalyzeBasic(data: EnqueueAnalyzeInput) {
-        analyzeJobs.push(data);
-      },
       async getContentWithRawById() {
         return record;
       },
@@ -513,11 +501,21 @@ test("runContentFetchHtml preserves rawExcerpt and overwrites rawBody when feed 
   );
 
   expect(result).toEqual({
-    contentId: "content-1",
-    fetched: true,
-    normalizeQueued: true,
+    message: null,
+    nextStep: {
+      data: {
+        contentId: "content-1",
+        trigger: "content.fetch-html",
+      },
+      jobName: "content.normalize",
+    },
+    outcome: "completed",
+    payload: {
+      contentId: "content-1",
+      fetched: true,
+      usedFallback: false,
+    },
     status: "completed",
-    usedFallback: false,
   });
   expect(harness.rawUpdates).toEqual([
     {
@@ -525,12 +523,6 @@ test("runContentFetchHtml preserves rawExcerpt and overwrites rawBody when feed 
       rawBody:
         "<html><body><article><p>full article</p><p>second paragraph</p><p>third paragraph</p></article></body></html>",
       rawExcerpt: "<p>short excerpt</p>",
-    },
-  ]);
-  expect(harness.normalizeJobs).toEqual([
-    {
-      contentId: "content-1",
-      trigger: "content.fetch-html",
     },
   ]);
 });
@@ -562,11 +554,13 @@ test("runContentFetchHtml still fetches original page even when RSS body looks l
   );
 
   expect(result).toMatchObject({
-    contentId: "content-1",
-    fetched: true,
-    normalizeQueued: true,
+    outcome: "completed",
+    payload: {
+      contentId: "content-1",
+      fetched: true,
+      usedFallback: false,
+    },
     status: "completed",
-    usedFallback: false,
   });
   expect(harness.rawUpdates.at(-1)).toMatchObject({
     format: "html",
@@ -591,15 +585,49 @@ test("runContentFetchHtml falls back to existing raw body when page fetch fails"
   );
 
   expect(result).toMatchObject({
-    contentId: "content-1",
-    fetched: false,
-    normalizeQueued: true,
+    outcome: "completed_with_fallback",
+    payload: {
+      contentId: "content-1",
+      fetched: false,
+      usedFallback: true,
+    },
     status: "completed",
-    usedFallback: true,
   });
   expect(harness.contentUpdates.at(-1)).toMatchObject({
     processingError: "page blocked",
     status: "raw",
+  });
+});
+
+test("runContentFetchHtml returns failed when page fetch fails and no fallback content exists", async () => {
+  const harness = createContentRecordHarness({}, { rawBody: "", rawExcerpt: null });
+
+  harness.fetchDeps.fetchHtml = async () => {
+    throw new Error("page blocked");
+  };
+
+  const result = await runContentFetchHtml(
+    {
+      contentId: "content-1",
+      trigger: "source.fetch",
+    },
+    harness.fetchDeps,
+  );
+
+  expect(result).toEqual({
+    message: "page blocked",
+    nextStep: null,
+    outcome: "failed",
+    payload: {
+      contentId: "content-1",
+      fetched: false,
+      usedFallback: false,
+    },
+    status: "failed",
+  });
+  expect(harness.contentUpdates.at(-1)).toMatchObject({
+    processingError: "page blocked",
+    status: "failed",
   });
 });
 
@@ -615,20 +643,49 @@ test("runContentNormalize writes cleaned markdown, updates status and enqueues a
   );
 
   expect(result).toMatchObject({
-    analyzeQueued: true,
-    contentId: "content-1",
+    outcome: "completed",
+    payload: {
+      contentId: "content-1",
+      markdownBytes: expect.any(Number),
+      truncated: false,
+    },
     status: "completed",
-    truncated: false,
   });
   expect(harness.contentUpdates.at(-1)).toMatchObject({
     cleanedMd: "# Article Title\n\nnormalized body",
     processingError: null,
     status: "normalized",
   });
-  expect(harness.analyzeJobs).toEqual([
+});
+
+test("runContentNormalize returns failed when normalization throws", async () => {
+  const harness = createContentRecordHarness();
+
+  harness.normalizeDeps.normalizeContent = () => {
+    throw new Error("normalize boom");
+  };
+
+  const result = await runContentNormalize(
     {
       contentId: "content-1",
-      trigger: "content.normalize",
+      trigger: "content.fetch-html",
     },
-  ]);
+    harness.normalizeDeps,
+  );
+
+  expect(result).toEqual({
+    message: "normalize boom",
+    nextStep: null,
+    outcome: "failed",
+    payload: {
+      contentId: "content-1",
+      markdownBytes: 0,
+      truncated: false,
+    },
+    status: "failed",
+  });
+  expect(harness.contentUpdates.at(-1)).toMatchObject({
+    processingError: "normalize boom",
+    status: "failed",
+  });
 });

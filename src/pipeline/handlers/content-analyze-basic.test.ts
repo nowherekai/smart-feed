@@ -1,23 +1,28 @@
 import { expect, test } from "bun:test";
 
-import { createContentFetchHtmlHandler } from "./content-fetch-html";
+import { createContentAnalyzeBasicHandler } from "./content-analyze-basic";
 
-test("contentFetchHtmlHandler executes via pipeline runtime", async () => {
+test("contentAnalyzeBasicHandler enqueues heavy step through pipeline runtime", async () => {
   const enqueuedJobs: Array<{ data: Record<string, unknown>; jobName: string }> = [];
-  const handler = createContentFetchHtmlHandler(
+  const handler = createContentAnalyzeBasicHandler(
     async (jobData) => ({
       nextStep: {
         data: {
           contentId: jobData.contentId,
-          trigger: "content.fetch-html",
+          trigger: "content.analyze.basic",
         },
-        jobName: "content.normalize",
+        jobName: "content.analyze.heavy",
       },
       outcome: "completed",
       payload: {
+        analysisRecordId: "analysis-1",
+        cached: false,
         contentId: jobData.contentId,
-        fetched: true,
-        usedFallback: false,
+        modelStrategy: "dummy-basic",
+        promptVersion: "basic-analysis-v1",
+        runtimeState: "dummy",
+        thresholdExceeded: true,
+        valueScore: 8,
       },
       status: "completed",
     }),
@@ -42,20 +47,26 @@ test("contentFetchHtmlHandler executes via pipeline runtime", async () => {
   const result = await handler({
     data: {
       contentId: "content-1",
-      trigger: "source.fetch",
+      pipelineRunId: "pipeline-1",
+      trigger: "content.normalize",
     },
-    name: "content.fetch-html",
+    name: "content.analyze.basic",
   } as never);
 
   expect(result).toEqual({
-    jobName: "content.fetch-html",
+    jobName: "content.analyze.basic",
     message: null,
     nextStepQueued: true,
     outcome: "completed",
     payload: {
+      analysisRecordId: "analysis-1",
+      cached: false,
       contentId: "content-1",
-      fetched: true,
-      usedFallback: false,
+      modelStrategy: "dummy-basic",
+      promptVersion: "basic-analysis-v1",
+      runtimeState: "dummy",
+      thresholdExceeded: true,
+      valueScore: 8,
     },
     pipelineRunId: "pipeline-1",
     status: "completed",
@@ -65,9 +76,9 @@ test("contentFetchHtmlHandler executes via pipeline runtime", async () => {
       data: {
         contentId: "content-1",
         pipelineRunId: "pipeline-1",
-        trigger: "content.fetch-html",
+        trigger: "content.analyze.basic",
       },
-      jobName: "content.normalize",
+      jobName: "content.analyze.heavy",
     },
   ]);
 });

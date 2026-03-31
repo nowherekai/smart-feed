@@ -1,6 +1,8 @@
 import type { Job, Processor } from "bullmq";
 
 import { type JobName, jobNames } from "../../queue";
+import { type ContentAnalyzeBasicPipelineResult, contentAnalyzeBasicHandler } from "./content-analyze-basic";
+import { type ContentAnalyzeHeavyPipelineResult, contentAnalyzeHeavyHandler } from "./content-analyze-heavy";
 import { type ContentFetchHtmlPipelineResult, contentFetchHtmlHandler } from "./content-fetch-html";
 import { type ContentNormalizePipelineResult, contentNormalizeHandler } from "./content-normalize";
 import { type SourceFetchPipelineResult, sourceFetchHandler } from "./source-fetch";
@@ -18,7 +20,9 @@ export type PipelineJobResult =
   | SourceImportPipelineResult
   | SourceFetchPipelineResult
   | ContentFetchHtmlPipelineResult
-  | ContentNormalizePipelineResult;
+  | ContentNormalizePipelineResult
+  | ContentAnalyzeBasicPipelineResult
+  | ContentAnalyzeHeavyPipelineResult;
 
 type PipelineProcessor = Processor<PipelineJobData, PipelineJobResult, JobName>;
 
@@ -36,8 +40,8 @@ export const pipelineHandlers = {
   [jobNames.sourceFetch]: sourceFetchHandler as PipelineProcessor,
   [jobNames.contentFetchHtml]: contentFetchHtmlHandler as PipelineProcessor,
   [jobNames.contentNormalize]: contentNormalizeHandler as PipelineProcessor,
-  [jobNames.contentAnalyzeBasic]: placeholderHandler,
-  [jobNames.contentAnalyzeHeavy]: placeholderHandler,
+  [jobNames.contentAnalyzeBasic]: contentAnalyzeBasicHandler as PipelineProcessor,
+  [jobNames.contentAnalyzeHeavy]: contentAnalyzeHeavyHandler as PipelineProcessor,
   [jobNames.digestCompose]: placeholderHandler,
   [jobNames.digestDeliver]: placeholderHandler,
 } satisfies Record<JobName, PipelineProcessor>;
