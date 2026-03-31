@@ -21,7 +21,6 @@
     "ci": "biome ci . && bun run typecheck && bun test && bun run build"
   },
   "dependencies": {
-    "@biomejs/biome": "2.4.10",
     "bullmq": "^5.71.1",
     "drizzle-orm": "^0.45.2",
     "ioredis": "^5.10.1",
@@ -31,6 +30,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.10",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
