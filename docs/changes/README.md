@@ -14,6 +14,7 @@
 | [008](arch/008_task4-ai-adapter-layer.md) | 2026-03-31 | Task 4 AI 适配层与显式 Provider 启用 |
 | [009](arch/009_content-pipeline-failure-gating-and-basic-analysis.md) | 2026-03-31 | Content Pipeline 通用失败阻断与基础分析最小闭环 |
 | [010](arch/010_content-heavy-runtime-and-traceability.md) | 2026-03-31 | Content Heavy Analysis 接入统一 Runtime 与可追溯落库 |
+| [011](arch/011_digest-compose-runtime-and-atomic-persistence.md) | 2026-03-31 | Digest Compose 接入统一 Runtime 与原子化持久化 |
 
 ## 运维变更
 

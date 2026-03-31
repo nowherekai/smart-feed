@@ -32,7 +32,7 @@
 - [x] Task 3: HTML 抓取与 Markdown 标准化
 - [x] Task 4: AI 适配层
 - [x] Task 5: 轻量分析与深度摘要
-- [ ] Task 6: Digest 编排
+- [x] Task 6: Digest 编排
 - [ ] Task 7: Digest 投递
 - [ ] Task 8: 调度层
 
@@ -427,7 +427,7 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
    - 查询上一次成功的 digest (`status=sent`) 的 `sent_at`
    - `window_start = max(last_successful_digest_at, now_local_8am - DIGEST_MAX_LOOKBACK_HOURS)`
    - `window_end = now_local_8am`（当前触发时间）
-   - `digest_date` = 发送日本地日期 (YYYY-MM-DD)
+   - `digest_date` = 发送日本地日期 (YYYY-MM-DD)；`daily:YYYY-MM-DD` 仅作为逻辑标识，由 `period='daily'` + `digest_date` 共同表达
 
 2. **收集分析记录**（基于内容业务时间，非分析完成时间）:
    - 从 `content_items` 出发，筛选 `effective_at` 在 `[window_start, window_end]` 内的内容
@@ -445,7 +445,7 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
    ```markdown
    # [smart-feed] 日报 2026-03-31
 
-   ## 🏷️ 技术动态
+   ## 技术动态
 
    ### 文章标题
    > 一句话摘要
@@ -457,8 +457,10 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 
    **关注理由**: ...
 
-   📎 来源: 来源名称 | [原文链接](url)
-   📝 证据: "原文片段..."
+   来源: 来源名称 (`source_trace_id`)
+   内容追踪: `content_trace_id`
+   原文: [原文链接](url)
+   证据: 原文片段...
 
    ---
    ```
@@ -474,10 +476,10 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 - [ ] 仅收集 status=full 且 traceability 完整的分析记录
 - [ ] 排除 blocked 来源
 - [ ] 按 category 分组，组内按 value_score 降序
-- [ ] 生成的 Markdown 包含来源名、原文链接、证据片段
+- [ ] 生成的 Markdown 包含来源名、`source_trace_id`、`content_trace_id`、原文链接、证据片段
 - [ ] digest_report 和 digest_items 正确持久化
 - [ ] 完成后自动入队 digest.deliver
-- [ ] 无内容时生成空报告或跳过
+- [ ] 无内容时生成空报告并继续投递
 
 **新增依赖**: 无
 

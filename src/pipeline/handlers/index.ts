@@ -5,6 +5,7 @@ import { type ContentAnalyzeBasicPipelineResult, contentAnalyzeBasicHandler } fr
 import { type ContentAnalyzeHeavyPipelineResult, contentAnalyzeHeavyHandler } from "./content-analyze-heavy";
 import { type ContentFetchHtmlPipelineResult, contentFetchHtmlHandler } from "./content-fetch-html";
 import { type ContentNormalizePipelineResult, contentNormalizeHandler } from "./content-normalize";
+import { type DigestComposePipelineResult, digestComposeHandler } from "./digest-compose";
 import { type SourceFetchPipelineResult, sourceFetchHandler } from "./source-fetch";
 import { type SourceImportPipelineResult, sourceImportHandler } from "./source-import";
 
@@ -22,7 +23,8 @@ export type PipelineJobResult =
   | ContentFetchHtmlPipelineResult
   | ContentNormalizePipelineResult
   | ContentAnalyzeBasicPipelineResult
-  | ContentAnalyzeHeavyPipelineResult;
+  | ContentAnalyzeHeavyPipelineResult
+  | DigestComposePipelineResult;
 
 type PipelineProcessor = Processor<PipelineJobData, PipelineJobResult, JobName>;
 
@@ -42,6 +44,6 @@ export const pipelineHandlers = {
   [jobNames.contentNormalize]: contentNormalizeHandler as PipelineProcessor,
   [jobNames.contentAnalyzeBasic]: contentAnalyzeBasicHandler as PipelineProcessor,
   [jobNames.contentAnalyzeHeavy]: contentAnalyzeHeavyHandler as PipelineProcessor,
-  [jobNames.digestCompose]: placeholderHandler,
+  [jobNames.digestCompose]: digestComposeHandler as PipelineProcessor,
   [jobNames.digestDeliver]: placeholderHandler,
 } satisfies Record<JobName, PipelineProcessor>;
