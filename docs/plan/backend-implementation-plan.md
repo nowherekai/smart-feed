@@ -29,7 +29,7 @@
 - [x] Task 0: 基础设施与工具层
 - [x] Task 1: 来源接入 Pipeline
 - [x] Task 2: RSS 抓取与内容入库
-- [ ] Task 3: HTML 抓取与 Markdown 标准化
+- [x] Task 3: HTML 抓取与 Markdown 标准化
 - [ ] Task 4: AI 适配层
 - [ ] Task 5: 轻量分析与深度摘要
 - [ ] Task 6: Digest 编排
@@ -245,10 +245,12 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 
 1. **content.fetch-html**:
    - 根据 content_id 获取 original_url
-   - 若 content_item_raw.raw_body 已包含足够全文（RSS 全文输出），跳过抓取
-   - 否则：
+   - 无论 RSS 是否看起来像全文，都优先抓取 original_url 对应的原始页面
+   - 抓取成功时：
      - 将当前 raw_body（feed 原始内容）保存到 raw_excerpt（若 raw_excerpt 尚为空）
-     - fetch 原始页面 HTML，更新 raw_body 为全文内容
+     - 用原始页面 HTML 更新 raw_body
+   - 抓取失败时：
+     - 保留现有 raw_body / raw_excerpt，使用 RSS 中已保存的原始内容继续后续标准化
    - 入队 content.normalize
 
 2. **content.normalize**:
@@ -261,7 +263,7 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
    - 入队 content.analyze.basic
 
 **验收标准**:
-- [ ] 全文抓取时：feed 原始内容先保存到 rawExcerpt，再用全文 HTML 更新 rawBody；跳过抓取时 rawBody 不变
+- [ ] 新文章发现后总是先尝试抓全文；抓取成功时 feed 原始内容先保存到 rawExcerpt，再用全文 HTML 更新 rawBody；抓取失败时回退使用 RSS 原始内容
 - [ ] HTML → Markdown 转换保留正文、标题、链接、图片
 - [ ] 移除广告和导航噪音
 - [ ] cleaned_md 正确存入 content_items

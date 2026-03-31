@@ -1,6 +1,8 @@
 import type { Job, Processor } from "bullmq";
 
 import { type JobName, jobNames } from "../../queue";
+import { type ContentFetchHtmlPipelineResult, contentFetchHtmlHandler } from "./content-fetch-html";
+import { type ContentNormalizePipelineResult, contentNormalizeHandler } from "./content-normalize";
 import { type SourceFetchPipelineResult, sourceFetchHandler } from "./source-fetch";
 import { type SourceImportPipelineResult, sourceImportHandler } from "./source-import";
 
@@ -11,7 +13,12 @@ type PlaceholderPipelineJobResult = {
   status: "pending_implementation";
 };
 
-export type PipelineJobResult = PlaceholderPipelineJobResult | SourceImportPipelineResult | SourceFetchPipelineResult;
+export type PipelineJobResult =
+  | PlaceholderPipelineJobResult
+  | SourceImportPipelineResult
+  | SourceFetchPipelineResult
+  | ContentFetchHtmlPipelineResult
+  | ContentNormalizePipelineResult;
 
 type PipelineProcessor = Processor<PipelineJobData, PipelineJobResult, JobName>;
 
@@ -27,8 +34,8 @@ async function placeholderHandler(job: Job<PipelineJobData, PipelineJobResult, J
 export const pipelineHandlers = {
   [jobNames.sourceImport]: sourceImportHandler as PipelineProcessor,
   [jobNames.sourceFetch]: sourceFetchHandler as PipelineProcessor,
-  [jobNames.contentFetchHtml]: placeholderHandler,
-  [jobNames.contentNormalize]: placeholderHandler,
+  [jobNames.contentFetchHtml]: contentFetchHtmlHandler as PipelineProcessor,
+  [jobNames.contentNormalize]: contentNormalizeHandler as PipelineProcessor,
   [jobNames.contentAnalyzeBasic]: placeholderHandler,
   [jobNames.contentAnalyzeHeavy]: placeholderHandler,
   [jobNames.digestCompose]: placeholderHandler,

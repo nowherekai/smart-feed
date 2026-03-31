@@ -5,6 +5,8 @@ import { contentItemRaws, contentItems, getDb, sources } from "../db";
 import { type ParsedRssFeed, type ParsedRssItem, parseRssFeed } from "../parsers";
 import { createQueue, jobNames } from "../queue";
 import { getEffectiveTime, isInTimeWindow, logger } from "../utils";
+import { fetchPageHtml, getRawBodyExcerptCandidate } from "./html-fetcher";
+import { normalizeRawContent } from "./normalizer";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -13,9 +15,16 @@ const SMART_FEED_USER_AGENT = "smart-feed/1.0 (+https://github.com/nowherekai/sm
 type SourceRecord = typeof sources.$inferSelect;
 type SourceUpdate = Partial<Omit<typeof sources.$inferInsert, "id" | "identifier" | "type">>;
 type ContentItemRecord = typeof contentItems.$inferSelect;
+type ContentItemUpdate = Partial<Omit<typeof contentItems.$inferInsert, "id" | "sourceId">>;
 type NewContentItem = typeof contentItems.$inferInsert;
+type ContentItemRawRecord = typeof contentItemRaws.$inferSelect;
+type ContentItemRawUpdate = Partial<Omit<typeof contentItemRaws.$inferInsert, "id" | "contentId">>;
 type NewContentItemRaw = typeof contentItemRaws.$inferInsert;
 type ContentReference = Pick<ContentItemRecord, "id">;
+type ContentWithRaw = {
+  content: ContentItemRecord;
+  raw: ContentItemRawRecord | null;
+};
 
 export type SourceFetchJobData = {
   importRunId?: string;
@@ -28,6 +37,16 @@ export type ContentFetchHtmlJobData = {
   trigger: "source.fetch";
 };
 
+export type ContentNormalizeJobData = {
+  contentId: string;
+  trigger: "content.fetch-html";
+};
+
+export type ContentAnalyzeBasicJobData = {
+  contentId: string;
+  trigger: "content.normalize";
+};
+
 export type SourceFetchSummary = {
   createdCount: number;
   duplicateCount: number;
@@ -36,6 +55,22 @@ export type SourceFetchSummary = {
   sentinelCount: number;
   sourceId: string;
   status: "completed" | "failed";
+};
+
+export type ContentFetchHtmlSummary = {
+  contentId: string;
+  fetched: boolean;
+  normalizeQueued: boolean;
+  status: "completed";
+  usedFallback: boolean;
+};
+
+export type ContentNormalizeSummary = {
+  analyzeQueued: boolean;
+  contentId: string;
+  markdownBytes: number;
+  status: "completed";
+  truncated: boolean;
 };
 
 export type SourceFetchDeps = {
@@ -51,6 +86,21 @@ export type SourceFetchDeps = {
   now?: () => Date;
   parseFeed?: (input: { fetchedAt: Date; feedUrl: string; xml: string }) => Promise<ParsedRssFeed>;
   updateSource?: (sourceId: string, data: SourceUpdate) => Promise<void>;
+};
+
+export type ContentFetchHtmlDeps = {
+  enqueueContentNormalize?: (data: ContentNormalizeJobData) => Promise<void>;
+  fetchHtml?: (url: string) => Promise<string>;
+  getContentWithRawById?: (contentId: string) => Promise<ContentWithRaw | null>;
+  updateContentItem?: (contentId: string, data: ContentItemUpdate) => Promise<void>;
+  updateContentItemRaw?: (contentId: string, data: ContentItemRawUpdate) => Promise<void>;
+};
+
+export type ContentNormalizeDeps = {
+  enqueueContentAnalyzeBasic?: (data: ContentAnalyzeBasicJobData) => Promise<void>;
+  getContentWithRawById?: (contentId: string) => Promise<ContentWithRaw | null>;
+  normalizeContent?: typeof normalizeRawContent;
+  updateContentItem?: (contentId: string, data: ContentItemUpdate) => Promise<void>;
 };
 
 function requireInsertedRow<T>(row: T | undefined, entityName: string): T {
@@ -75,6 +125,45 @@ async function updateSource(sourceId: string, data: SourceUpdate): Promise<void>
 
   const db = getDb();
   await db.update(sources).set(data).where(eq(sources.id, sourceId));
+}
+
+async function getContentWithRawById(contentId: string): Promise<ContentWithRaw | null> {
+  const db = getDb();
+  const [result] = await db
+    .select({
+      content: contentItems,
+      raw: contentItemRaws,
+    })
+    .from(contentItems)
+    .leftJoin(contentItemRaws, eq(contentItemRaws.contentId, contentItems.id))
+    .where(eq(contentItems.id, contentId));
+
+  if (!result) {
+    return null;
+  }
+
+  return {
+    content: result.content,
+    raw: result.raw,
+  };
+}
+
+async function updateContentItem(contentId: string, data: ContentItemUpdate): Promise<void> {
+  if (Object.keys(data).length === 0) {
+    return;
+  }
+
+  const db = getDb();
+  await db.update(contentItems).set(data).where(eq(contentItems.id, contentId));
+}
+
+async function updateContentItemRaw(contentId: string, data: ContentItemRawUpdate): Promise<void> {
+  if (Object.keys(data).length === 0) {
+    return;
+  }
+
+  const db = getDb();
+  await db.update(contentItemRaws).set(data).where(eq(contentItemRaws.contentId, contentId));
 }
 
 async function findContentByExternalId(sourceId: string, externalId: string): Promise<ContentReference | null> {
@@ -128,6 +217,16 @@ async function createContentItemRaw(data: NewContentItemRaw): Promise<void> {
 async function enqueueContentFetchHtml(data: ContentFetchHtmlJobData): Promise<void> {
   const queue = createQueue<ContentFetchHtmlJobData>();
   await queue.add(jobNames.contentFetchHtml, data);
+}
+
+async function enqueueContentNormalize(data: ContentNormalizeJobData): Promise<void> {
+  const queue = createQueue<ContentNormalizeJobData>();
+  await queue.add(jobNames.contentNormalize, data);
+}
+
+async function enqueueContentAnalyzeBasic(data: ContentAnalyzeBasicJobData): Promise<void> {
+  const queue = createQueue<ContentAnalyzeBasicJobData>();
+  await queue.add(jobNames.contentAnalyzeBasic, data);
 }
 
 function toFailureMessage(error: unknown): string {
@@ -242,7 +341,7 @@ function getRawContentFormat(item: ParsedRssItem): NewContentItemRaw["format"] {
   return "text";
 }
 
-function buildDeps(overrides: SourceFetchDeps): Required<SourceFetchDeps> {
+function buildSourceFetchDeps(overrides: SourceFetchDeps): Required<SourceFetchDeps> {
   return {
     appEnv: overrides.appEnv ?? getAppEnv(),
     createContentItem: overrides.createContentItem ?? createContentItem,
@@ -259,11 +358,30 @@ function buildDeps(overrides: SourceFetchDeps): Required<SourceFetchDeps> {
   };
 }
 
+function buildContentFetchHtmlDeps(overrides: ContentFetchHtmlDeps): Required<ContentFetchHtmlDeps> {
+  return {
+    enqueueContentNormalize: overrides.enqueueContentNormalize ?? enqueueContentNormalize,
+    fetchHtml: overrides.fetchHtml ?? fetchPageHtml,
+    getContentWithRawById: overrides.getContentWithRawById ?? getContentWithRawById,
+    updateContentItem: overrides.updateContentItem ?? updateContentItem,
+    updateContentItemRaw: overrides.updateContentItemRaw ?? updateContentItemRaw,
+  };
+}
+
+function buildContentNormalizeDeps(overrides: ContentNormalizeDeps): Required<ContentNormalizeDeps> {
+  return {
+    enqueueContentAnalyzeBasic: overrides.enqueueContentAnalyzeBasic ?? enqueueContentAnalyzeBasic,
+    getContentWithRawById: overrides.getContentWithRawById ?? getContentWithRawById,
+    normalizeContent: overrides.normalizeContent ?? normalizeRawContent,
+    updateContentItem: overrides.updateContentItem ?? updateContentItem,
+  };
+}
+
 export async function runSourceFetch(
   jobData: SourceFetchJobData,
   overrides: SourceFetchDeps = {},
 ): Promise<SourceFetchSummary> {
-  const deps = buildDeps(overrides);
+  const deps = buildSourceFetchDeps(overrides);
   const fetchedAt = deps.now();
   const source = await deps.getSourceById(jobData.sourceId);
 
@@ -432,6 +550,126 @@ export async function runSourceFetch(
       trigger: jobData.trigger,
     });
 
+    throw error;
+  }
+}
+
+export async function runContentFetchHtml(
+  jobData: ContentFetchHtmlJobData,
+  overrides: ContentFetchHtmlDeps = {},
+): Promise<ContentFetchHtmlSummary> {
+  const deps = buildContentFetchHtmlDeps(overrides);
+  const record = await deps.getContentWithRawById(jobData.contentId);
+
+  if (!record) {
+    throw new Error(`[services/content] Content "${jobData.contentId}" not found.`);
+  }
+
+  if (!record.raw) {
+    throw new Error(`[services/content] Raw content for "${jobData.contentId}" not found.`);
+  }
+
+  let fetched = false;
+  let usedFallback = false;
+
+  try {
+    const fetchedHtml = await deps.fetchHtml(record.content.originalUrl);
+    await deps.updateContentItemRaw(record.content.id, {
+      format: "html",
+      rawBody: fetchedHtml,
+      rawExcerpt: record.raw.rawExcerpt ?? getRawBodyExcerptCandidate(record.raw.rawBody),
+    });
+    fetched = true;
+
+    await deps.updateContentItem(record.content.id, {
+      processingError: null,
+      status: "raw",
+    });
+  } catch (error) {
+    const errorMessage = toFailureMessage(error);
+    const fallbackAvailable = Boolean(record.raw.rawBody.trim() || record.raw.rawExcerpt?.trim());
+
+    if (!fallbackAvailable) {
+      await deps.updateContentItem(record.content.id, {
+        processingError: errorMessage,
+        status: "failed",
+      });
+      throw error;
+    }
+
+    usedFallback = true;
+    await deps.updateContentItem(record.content.id, {
+      processingError: errorMessage,
+      status: "raw",
+    });
+    logger.warn("content html fetch failed, fallback to existing raw body", {
+      contentId: record.content.id,
+      error: errorMessage,
+      originalUrl: record.content.originalUrl,
+      trigger: jobData.trigger,
+    });
+  }
+
+  await deps.enqueueContentNormalize({
+    contentId: record.content.id,
+    trigger: "content.fetch-html",
+  });
+
+  return {
+    contentId: record.content.id,
+    fetched,
+    normalizeQueued: true,
+    status: "completed",
+    usedFallback,
+  };
+}
+
+export async function runContentNormalize(
+  jobData: ContentNormalizeJobData,
+  overrides: ContentNormalizeDeps = {},
+): Promise<ContentNormalizeSummary> {
+  const deps = buildContentNormalizeDeps(overrides);
+  const record = await deps.getContentWithRawById(jobData.contentId);
+
+  if (!record) {
+    throw new Error(`[services/content] Content "${jobData.contentId}" not found.`);
+  }
+
+  if (!record.raw) {
+    throw new Error(`[services/content] Raw content for "${jobData.contentId}" not found.`);
+  }
+
+  try {
+    const normalized = deps.normalizeContent({
+      format: record.raw.format,
+      originalUrl: record.content.originalUrl,
+      rawBody: record.raw.rawBody,
+      title: record.content.title,
+    });
+    const markdownBytes = new TextEncoder().encode(normalized.markdown).length;
+
+    await deps.updateContentItem(record.content.id, {
+      cleanedMd: normalized.markdown,
+      processingError: null,
+      status: "normalized",
+    });
+    await deps.enqueueContentAnalyzeBasic({
+      contentId: record.content.id,
+      trigger: "content.normalize",
+    });
+
+    return {
+      analyzeQueued: true,
+      contentId: record.content.id,
+      markdownBytes,
+      status: "completed",
+      truncated: normalized.truncated,
+    };
+  } catch (error) {
+    await deps.updateContentItem(record.content.id, {
+      processingError: toFailureMessage(error),
+      status: "failed",
+    });
     throw error;
   }
 }

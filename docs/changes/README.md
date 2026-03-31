@@ -10,6 +10,7 @@
 | [004](arch/004_task0-backend-infra-and-pipeline-tracking.md) | 2026-03-31 | Task 0 后端基础工具层与 Pipeline Tracking |
 | [005](arch/005_task1-source-import-pipeline.md) | 2026-03-31 | Task 1 来源接入 Pipeline |
 | [006](arch/006_task2-rss-fetch-and-content-ingestion.md) | 2026-03-31 | Task 2 RSS 抓取与内容入库 |
+| [007](arch/007_task3-html-fetch-and-normalize.md) | 2026-03-31 | Task 3 HTML 抓取与 Markdown 标准化 |
 
 ## 运维变更
 
