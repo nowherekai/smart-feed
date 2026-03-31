@@ -7,16 +7,18 @@
     "dev:web": "next dev",
     "dev:worker": "bun --watch src/workers/index.ts",
     "worker": "bun src/workers/index.ts",
-    "check": "bunx tsc --noEmit",
-    "db:generate": "bunx drizzle-kit generate",
-    "db:migrate": "bunx drizzle-kit migrate",
-    "db:push": "bunx drizzle-kit push",
-    "db:studio": "bunx drizzle-kit studio",
     "build:web": "next build",
     "build:worker": "bun build ./src/workers/index.ts --target bun --outdir dist/worker",
     "build": "bun run build:web && bun run build:worker",
     "start": "next start",
-    "test": "bun test"
+    "db:generate": "bunx drizzle-kit generate",
+    "db:migrate": "bunx drizzle-kit migrate",
+    "db:push": "bunx drizzle-kit push",
+    "db:studio": "bunx drizzle-kit studio",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test",
+    "check": "biome check --write .",
+    "ci": "biome ci . && bun run typecheck && bun test && bun run build"
   },
   "dependencies": {
     "bullmq": "^5.71.1",
@@ -28,6 +30,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.10",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

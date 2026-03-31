@@ -1,5 +1,5 @@
 export {
-  pipelineHandlers,
   type PipelineJobData,
   type PipelineJobResult,
+  pipelineHandlers,
 } from "./handlers";

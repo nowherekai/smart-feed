@@ -1,15 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
-
 import { expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
 import { eq } from "drizzle-orm";
 
 import { getDb, pipelineRuns, stepRuns } from "../db";
-import {
-  createPipelineRun,
-  createStepRun,
-  updatePipelineRun,
-  updateStepRun,
-} from "./pipeline-tracking";
+import { createPipelineRun, createStepRun, updatePipelineRun, updateStepRun } from "./pipeline-tracking";
 
 function loadEnvValueFromFiles(name: string): string | null {
   for (const filePath of [".env.local", ".env"]) {
@@ -75,14 +69,8 @@ test("pipeline tracking CRUD persists pipeline runs and step runs", async () => 
         errorMessage: "boom",
       });
 
-      const [storedPipelineRun] = await db
-        .select()
-        .from(pipelineRuns)
-        .where(eq(pipelineRuns.id, pipelineRun.id));
-      const [storedStepRun] = await db
-        .select()
-        .from(stepRuns)
-        .where(eq(stepRuns.id, stepRun.id));
+      const [storedPipelineRun] = await db.select().from(pipelineRuns).where(eq(pipelineRuns.id, pipelineRun.id));
+      const [storedStepRun] = await db.select().from(stepRuns).where(eq(stepRuns.id, stepRun.id));
 
       expect(storedPipelineRun).toBeDefined();
       expect(storedStepRun).toBeDefined();

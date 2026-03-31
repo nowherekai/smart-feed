@@ -18,10 +18,7 @@ const APP_ENV_KEYS = [
   "SMTP_TO",
 ] as const;
 
-function withEnv(
-  overrides: Partial<Record<(typeof APP_ENV_KEYS)[number], string | undefined>>,
-  run: () => void,
-) {
+function withEnv(overrides: Partial<Record<(typeof APP_ENV_KEYS)[number], string | undefined>>, run: () => void) {
   const previousValues = new Map<string, string | undefined>();
 
   for (const key of APP_ENV_KEYS) {
@@ -146,7 +143,7 @@ test("loadAppEnv rejects invalid numeric and timezone values", () => {
       SMART_FEED_TIMEZONE: "Invalid/Timezone",
     },
     () => {
-      expect(() => loadAppEnv()).toThrow('Invalid SMART_FEED_TIMEZONE timezone');
+      expect(() => loadAppEnv()).toThrow("Invalid SMART_FEED_TIMEZONE timezone");
     },
   );
 

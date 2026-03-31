@@ -21,9 +21,7 @@ function parseBooleanEnv(name: string, rawValue: string | undefined): boolean {
     return false;
   }
 
-  throw new Error(
-    `[db/env] Invalid ${name} value "${rawValue}". Use true/false, 1/0, yes/no, on/off, or require.`,
-  );
+  throw new Error(`[db/env] Invalid ${name} value "${rawValue}". Use true/false, 1/0, yes/no, on/off, or require.`);
 }
 
 export function loadDatabaseEnv(): DatabaseEnv {

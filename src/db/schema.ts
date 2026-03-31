@@ -43,11 +43,7 @@ export const sourceTypeEnum = pgEnum("source_type", [
   "youtube-source",
 ]);
 
-export const sourceStatusEnum = pgEnum("source_status", [
-  "active",
-  "paused",
-  "blocked",
-]);
+export const sourceStatusEnum = pgEnum("source_status", ["active", "paused", "blocked"]);
 
 export const contentKindEnum = pgEnum("content_kind", [
   "article",
@@ -65,33 +61,15 @@ export const contentStatusEnum = pgEnum("content_status", [
   "failed",
 ]);
 
-export const rawContentFormatEnum = pgEnum("raw_content_format", [
-  "html",
-  "text",
-  "markdown",
-  "transcript",
-]);
+export const rawContentFormatEnum = pgEnum("raw_content_format", ["html", "text", "markdown", "transcript"]);
 
-export const analysisStatusEnum = pgEnum("analysis_status", [
-  "basic",
-  "full",
-  "rejected",
-]);
+export const analysisStatusEnum = pgEnum("analysis_status", ["basic", "full", "rejected"]);
 
 export const digestPeriodEnum = pgEnum("digest_period", ["daily", "weekly"]);
 
-export const digestStatusEnum = pgEnum("digest_status", [
-  "draft",
-  "ready",
-  "sent",
-  "failed",
-]);
+export const digestStatusEnum = pgEnum("digest_status", ["draft", "ready", "sent", "failed"]);
 
-export const feedbackTargetTypeEnum = pgEnum("feedback_target_type", [
-  "content",
-  "source",
-  "topic",
-]);
+export const feedbackTargetTypeEnum = pgEnum("feedback_target_type", ["content", "source", "topic"]);
 
 export const feedbackSignalEnum = pgEnum("feedback_signal", [
   "useful",
@@ -108,18 +86,9 @@ export const feedbackSignalEnum = pgEnum("feedback_signal", [
 
 export const importModeEnum = pgEnum("import_mode", ["single", "opml"]);
 
-export const importItemResultEnum = pgEnum("import_item_result", [
-  "created",
-  "skipped_duplicate",
-  "failed",
-]);
+export const importItemResultEnum = pgEnum("import_item_result", ["created", "skipped_duplicate", "failed"]);
 
-export const runStatusEnum = pgEnum("run_status", [
-  "pending",
-  "running",
-  "completed",
-  "failed",
-]);
+export const runStatusEnum = pgEnum("run_status", ["pending", "running", "completed", "failed"]);
 
 export const sources = pgTable(
   "sources",
@@ -164,18 +133,10 @@ export const sources = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => ({
-    sourceTypeIdentifierUnique: uniqueIndex("uniq_sources_type_identifier").on(
-      table.type,
-      table.identifier,
-    ),
+    sourceTypeIdentifierUnique: uniqueIndex("uniq_sources_type_identifier").on(table.type, table.identifier),
     sourceStatusIdx: index("idx_sources_status").on(table.status),
-    sourceSyncIdx: index("idx_sources_last_successful_sync_at").on(
-      table.lastSuccessfulSyncAt,
-    ),
-    sourceWeightCheck: check(
-      "chk_sources_weight_non_negative",
-      sql`${table.weight} >= 0`,
-    ),
+    sourceSyncIdx: index("idx_sources_last_successful_sync_at").on(table.lastSuccessfulSyncAt),
+    sourceWeightCheck: check("chk_sources_weight_non_negative", sql`${table.weight} >= 0`),
   }),
 );
 
@@ -228,25 +189,15 @@ export const contentItems = pgTable(
   (table) => ({
     contentSourceIdx: index("idx_content_items_source_id").on(table.sourceId),
     contentStatusIdx: index("idx_content_items_status").on(table.status),
-    contentEffectiveIdx: index("idx_content_items_effective_at").on(
-      table.effectiveAt,
-    ),
-    contentSourceEffectiveIdx: index(
-      "idx_content_items_source_effective_at",
-    ).on(table.sourceId, table.effectiveAt),
-    contentSourceExternalUnique: uniqueIndex(
-      "uniq_content_items_source_external_id",
-    )
+    contentEffectiveIdx: index("idx_content_items_effective_at").on(table.effectiveAt),
+    contentSourceEffectiveIdx: index("idx_content_items_source_effective_at").on(table.sourceId, table.effectiveAt),
+    contentSourceExternalUnique: uniqueIndex("uniq_content_items_source_external_id")
       .on(table.sourceId, table.externalId)
       .where(sql`${table.externalId} is not null`),
-    contentSourceNormalizedUrlUnique: uniqueIndex(
-      "uniq_content_items_source_normalized_original_url",
-    )
+    contentSourceNormalizedUrlUnique: uniqueIndex("uniq_content_items_source_normalized_original_url")
       .on(table.sourceId, table.normalizedOriginalUrl)
       .where(sql`${table.normalizedOriginalUrl} is not null`),
-    contentSourceUrlHashUnique: uniqueIndex(
-      "uniq_content_items_source_original_url_hash",
-    )
+    contentSourceUrlHashUnique: uniqueIndex("uniq_content_items_source_original_url_hash")
       .on(table.sourceId, table.originalUrlHash)
       .where(sql`${table.originalUrlHash} is not null`),
   }),
@@ -278,9 +229,7 @@ export const contentItemRaws = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => ({
-    rawContentUnique: uniqueIndex("uniq_content_item_raws_content_id").on(
-      table.contentId,
-    ),
+    rawContentUnique: uniqueIndex("uniq_content_item_raws_content_id").on(table.contentId),
   }),
 );
 
@@ -296,18 +245,9 @@ export const analysisRecords = pgTable(
       .references(() => sources.id, { onDelete: "restrict" }),
     modelStrategy: varchar("model_strategy", { length: 120 }).notNull(),
     promptVersion: varchar("prompt_version", { length: 64 }).notNull(),
-    categories: jsonb("categories")
-      .$type<string[]>()
-      .notNull()
-      .default(sql`'[]'::jsonb`),
-    keywords: jsonb("keywords")
-      .$type<string[]>()
-      .notNull()
-      .default(sql`'[]'::jsonb`),
-    entities: jsonb("entities")
-      .$type<string[]>()
-      .notNull()
-      .default(sql`'[]'::jsonb`),
+    categories: jsonb("categories").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    keywords: jsonb("keywords").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    entities: jsonb("entities").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     language: varchar("language", { length: 16 }),
     sentiment: varchar("sentiment", { length: 32 }),
     valueScore: integer("value_score").notNull(),
@@ -326,22 +266,15 @@ export const analysisRecords = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    analysisContentIdx: index("idx_analysis_records_content_id").on(
+    analysisContentIdx: index("idx_analysis_records_content_id").on(table.contentId),
+    analysisSourceIdx: index("idx_analysis_records_source_id").on(table.sourceId),
+    analysisStatusCreatedIdx: index("idx_analysis_records_status_created_at").on(table.status, table.createdAt),
+    analysisScoreIdx: index("idx_analysis_records_value_score").on(table.valueScore),
+    analysisContentStrategyUnique: uniqueIndex("uniq_analysis_records_content_strategy_prompt").on(
       table.contentId,
+      table.modelStrategy,
+      table.promptVersion,
     ),
-    analysisSourceIdx: index("idx_analysis_records_source_id").on(
-      table.sourceId,
-    ),
-    analysisStatusCreatedIdx: index("idx_analysis_records_status_created_at").on(
-      table.status,
-      table.createdAt,
-    ),
-    analysisScoreIdx: index("idx_analysis_records_value_score").on(
-      table.valueScore,
-    ),
-    analysisContentStrategyUnique: uniqueIndex(
-      "uniq_analysis_records_content_strategy_prompt",
-    ).on(table.contentId, table.modelStrategy, table.promptVersion),
     analysisValueScoreCheck: check(
       "chk_analysis_records_value_score_range",
       sql`${table.valueScore} >= 0 and ${table.valueScore} <= 10`,
@@ -385,10 +318,7 @@ export const digestReports = pgTable(
     }),
   },
   (table) => ({
-    digestPeriodDateUnique: uniqueIndex("uniq_digest_reports_period_digest_date").on(
-      table.period,
-      table.digestDate,
-    ),
+    digestPeriodDateUnique: uniqueIndex("uniq_digest_reports_period_digest_date").on(table.period, table.digestDate),
     digestStatusIdx: index("idx_digest_reports_status").on(table.status),
     digestWindowIdx: index("idx_digest_reports_window_end").on(table.windowEnd),
   }),
@@ -415,13 +345,11 @@ export const digestItems = pgTable(
   },
   (table) => ({
     digestItemDigestIdx: index("idx_digest_items_digest_id").on(table.digestId),
-    digestItemDigestRankIdx: index("idx_digest_items_digest_rank").on(
+    digestItemDigestRankIdx: index("idx_digest_items_digest_rank").on(table.digestId, table.rank),
+    digestItemDigestAnalysisUnique: uniqueIndex("uniq_digest_items_digest_analysis").on(
       table.digestId,
-      table.rank,
+      table.analysisRecordId,
     ),
-    digestItemDigestAnalysisUnique: uniqueIndex(
-      "uniq_digest_items_digest_analysis",
-    ).on(table.digestId, table.analysisRecordId),
   }),
 );
 
@@ -442,14 +370,9 @@ export const feedbackSignals = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    feedbackTargetIdx: index("idx_feedback_signals_target").on(
-      table.targetType,
-      table.targetId,
-    ),
+    feedbackTargetIdx: index("idx_feedback_signals_target").on(table.targetType, table.targetId),
     feedbackSignalIdx: index("idx_feedback_signals_signal").on(table.signal),
-    feedbackCreatedIdx: index("idx_feedback_signals_created_at").on(
-      table.createdAt,
-    ),
+    feedbackCreatedIdx: index("idx_feedback_signals_created_at").on(table.createdAt),
   }),
 );
 
@@ -480,9 +403,7 @@ export const sourceImportRuns = pgTable(
   },
   (table) => ({
     importRunStatusIdx: index("idx_source_import_runs_status").on(table.status),
-    importRunCreatedIdx: index("idx_source_import_runs_created_at").on(
-      table.createdAt,
-    ),
+    importRunCreatedIdx: index("idx_source_import_runs_created_at").on(table.createdAt),
   }),
 );
 
@@ -508,12 +429,8 @@ export const sourceImportRunItems = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    importRunItemRunIdx: index("idx_source_import_run_items_import_run_id").on(
-      table.importRunId,
-    ),
-    importRunItemResultIdx: index("idx_source_import_run_items_result").on(
-      table.result,
-    ),
+    importRunItemRunIdx: index("idx_source_import_run_items_import_run_id").on(table.importRunId),
+    importRunItemResultIdx: index("idx_source_import_run_items_result").on(table.result),
   }),
 );
 
@@ -546,16 +463,10 @@ export const pipelineRuns = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    pipelineRunContentIdx: index("idx_pipeline_runs_content_id").on(
-      table.contentId,
-    ),
-    pipelineRunDigestIdx: index("idx_pipeline_runs_digest_id").on(
-      table.digestId,
-    ),
+    pipelineRunContentIdx: index("idx_pipeline_runs_content_id").on(table.contentId),
+    pipelineRunDigestIdx: index("idx_pipeline_runs_digest_id").on(table.digestId),
     pipelineRunStatusIdx: index("idx_pipeline_runs_status").on(table.status),
-    pipelineRunStartedIdx: index("idx_pipeline_runs_started_at").on(
-      table.startedAt,
-    ),
+    pipelineRunStartedIdx: index("idx_pipeline_runs_started_at").on(table.startedAt),
   }),
 );
 
@@ -587,9 +498,7 @@ export const stepRuns = pgTable(
       .$defaultFn(() => new Date()),
   },
   (table) => ({
-    stepRunPipelineIdx: index("idx_step_runs_pipeline_run_id").on(
-      table.pipelineRunId,
-    ),
+    stepRunPipelineIdx: index("idx_step_runs_pipeline_run_id").on(table.pipelineRunId),
     stepRunStatusIdx: index("idx_step_runs_status").on(table.status),
     stepRunStepIdx: index("idx_step_runs_step_name").on(table.stepName),
   }),

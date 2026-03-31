@@ -3,9 +3,7 @@ import { expect, test } from "bun:test";
 import { hashUrl, normalizeUrl } from "./url";
 
 test("normalizeUrl canonicalizes host, ports, paths, hashes, and query order", () => {
-  expect(normalizeUrl("HTTPS://Example.com:443/path/?b=2&a=1#fragment")).toBe(
-    "https://example.com/path?a=1&b=2",
-  );
+  expect(normalizeUrl("HTTPS://Example.com:443/path/?b=2&a=1#fragment")).toBe("https://example.com/path?a=1&b=2");
   expect(normalizeUrl("http://EXAMPLE.com:80")).toBe("http://example.com/");
 });
 
