@@ -3,6 +3,7 @@ import type { DefaultJobOptions } from "bullmq";
 export const queueName = "smart-feed";
 
 export const jobNames = {
+  schedulerSourcesSync: "scheduler.sources.sync",
   sourceImport: "source.import",
   sourceFetch: "source.fetch",
   contentFetchHtml: "content.fetch-html",
@@ -14,6 +15,10 @@ export const jobNames = {
 } as const;
 
 export type JobName = (typeof jobNames)[keyof typeof jobNames];
+
+export function buildSourceFetchDeduplicationId(sourceId: string): string {
+  return `${jobNames.sourceFetch}:${sourceId}`;
+}
 
 export const defaultJobOptions = {
   attempts: 3,
