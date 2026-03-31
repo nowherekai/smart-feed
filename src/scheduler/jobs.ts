@@ -70,7 +70,5 @@ export async function registerSchedulerJobs(
 }
 
 export async function removeSchedulerJobs(queue: Queue<Record<string, unknown>, unknown, string>): Promise<void> {
-  for (const schedulerId of Object.values(schedulerJobIds)) {
-    await queue.removeJobScheduler(schedulerId);
-  }
+  await Promise.all(Object.values(schedulerJobIds).map((schedulerId) => queue.removeJobScheduler(schedulerId)));
 }
