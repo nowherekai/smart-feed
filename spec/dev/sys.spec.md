@@ -280,7 +280,8 @@ FeedbackSignal (N) ────► (1) Source/ContentItem/Topic
    - `AnalysisRecord`: `content_id + model_strategy + prompt_version` 唯一
 
 2. **数据分离原则**
-   - `raw_body` 永不修改
+   - 加工层（`cleaned_md` / `AnalysisRecord`）不得回写覆盖原始层（`raw_body`）
+   - 原始层内部，全文抓取可替代 feed 初始内容；feed 原始摘要通过 `rawExcerpt` 保留
    - `cleaned_md` 可重新生成
    - `AnalysisRecord` 支持多版本共存
 

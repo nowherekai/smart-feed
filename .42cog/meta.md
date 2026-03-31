@@ -42,12 +42,12 @@ MVP 阶段聚焦 RSS，后续逐步扩展到 Podcast、Newsletter、微信公众
 - 应用形态: Next.js API Routes + 后台 Worker
 - 数据存储: PostgreSQL
 - ORM: Drizzle ORM
-- 任务队列: pg-boss
+- 任务队列: bullmq
 
 **基础设施**:
 - 配置管理: `.env` + Bun 原生环境变量加载
 - 部署方式: Docker Compose / 任意支持 Docker 的平台
-- 定时任务: pg-boss 定时任务
+- 定时任务: bullmq 定时任务
 - 运行模式: 单用户模式
 
 **AI集成**:
