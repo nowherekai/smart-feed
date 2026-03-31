@@ -129,7 +129,7 @@
 - 移除广告、导航、页脚等无关元素
 - 保留正文、标题、链接、图片
 - 输出存储到 `cleaned_md` 字段
-- 原始 `raw_body` 保持不变(数据分离原则)
+- 加工产物（`cleaned_md` / `analysis`）不得覆盖原始层；原始层 `raw_body` 允许被全文抓取更新，feed 原始摘要通过 `rawExcerpt` 保留
 
 **技术约束**:
 - 使用 HTML-to-Markdown 转换库
