@@ -177,16 +177,22 @@ export async function executeDigestPipelineStep<
       status: "completed",
     });
 
-    // Digest compose is the only implemented step in Task 6.
-    // Even if it enqueues digest.deliver, we close this run here to avoid
-    // leaving pipeline_runs stuck in running while delivery is still a placeholder.
-    await deps.updatePipelineRun(
-      pipelineRunId,
-      buildPipelineUpdate(digestId, {
-        finishedAt,
-        status: "completed",
-      }),
-    );
+    if (result.nextStep) {
+      await deps.updatePipelineRun(
+        pipelineRunId,
+        buildPipelineUpdate(digestId, {
+          status: "running",
+        }),
+      );
+    } else {
+      await deps.updatePipelineRun(
+        pipelineRunId,
+        buildPipelineUpdate(digestId, {
+          finishedAt,
+          status: "completed",
+        }),
+      );
+    }
 
     return {
       jobName,

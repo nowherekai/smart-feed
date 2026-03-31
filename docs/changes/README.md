@@ -15,6 +15,7 @@
 | [009](arch/009_content-pipeline-failure-gating-and-basic-analysis.md) | 2026-03-31 | Content Pipeline 通用失败阻断与基础分析最小闭环 |
 | [010](arch/010_content-heavy-runtime-and-traceability.md) | 2026-03-31 | Content Heavy Analysis 接入统一 Runtime 与可追溯落库 |
 | [011](arch/011_digest-compose-runtime-and-atomic-persistence.md) | 2026-03-31 | Digest Compose 接入统一 Runtime 与原子化持久化 |
+| [012](arch/012_digest-delivery-configurable-smtp-and-runtime-handoff.md) | 2026-03-31 | Digest Delivery 可配置 SMTP 投递与 Runtime 交接 |
 
 ## 运维变更
 

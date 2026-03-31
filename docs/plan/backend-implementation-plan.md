@@ -18,7 +18,7 @@
 | BullMQ 队列配置 | ✅ | 8 个 Job 类型，重试策略，并发度 |
 | Redis 连接 | ✅ | 单例连接，环境变量配置 |
 | Worker 入口 | ✅ | 启动/优雅关闭，事件监听 |
-| Pipeline Handlers | 🟡 | `source.import`、`source.fetch`、`content.fetch-html`、`content.normalize`、`content.analyze.basic`、`content.analyze.heavy` 已有真实实现；`digest.compose`、`digest.deliver` 仍为占位 |
+| Pipeline Handlers | ✅ | 8 个 Pipeline Handlers 均已有真实实现：`source.import`、`source.fetch`、`content.fetch-html`、`content.normalize`、`content.analyze.basic`、`content.analyze.heavy`、`digest.compose`、`digest.deliver` |
 
 ### 待实现 (本计划范围)
 
@@ -33,7 +33,7 @@
 - [x] Task 4: AI 适配层
 - [x] Task 5: 轻量分析与深度摘要
 - [x] Task 6: Digest 编排
-- [ ] Task 7: Digest 投递
+- [x] Task 7: Digest 投递
 - [ ] Task 8: 调度层
 
 ---
@@ -506,6 +506,8 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
    - 包裹基础 HTML 邮件模板（内联 CSS）
 
 2. **邮件发送**:
+   - 邮件投递通过显式配置控制，`SMART_FEED_EMAIL_DELIVERY_ENABLED=false` 时默认跳过发送并保留 `status=ready`
+   - 仅当 `SMART_FEED_EMAIL_DELIVERY_ENABLED=true` 时，才要求 `SMTP_HOST/PORT/USER/PASS/FROM/TO` 全部配置
    - 主题: `[smart-feed] 日报 YYYY-MM-DD`
    - From: SMTP_FROM
    - To: SMTP_TO
@@ -513,6 +515,7 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
    - 备选: 纯文本版 (markdown_body 原文)
 
 3. **状态更新**:
+   - 邮件投递未启用 → 跳过发送，保留 `digest_report.status = 'ready'`
    - 发送成功 → `digest_report.status = 'sent'`, `sent_at = now`
    - 发送失败 → `digest_report.status = 'failed'`, 记录错误日志
    - 失败不阻塞系统，支持重试
@@ -520,6 +523,7 @@ updateStepRun(id: string, data: Partial<StepRun>): Promise<void>
 **验收标准**:
 - [ ] Markdown → HTML 转换正确
 - [ ] 邮件主题格式: `[smart-feed] 日报 YYYY-MM-DD`
+- [ ] 邮件投递默认关闭，未启用时跳过发送并保留 `status=ready`
 - [ ] 通过 SMTP 成功发送邮件
 - [ ] 发送成功更新 status=sent + sent_at
 - [ ] 发送失败更新 status=failed + 记录日志

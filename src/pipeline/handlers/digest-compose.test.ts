@@ -86,7 +86,7 @@ test("digestComposeHandler enqueues digest.deliver and links digest id into pipe
   ]);
   expect(pipelineUpdates.at(-1)).toMatchObject({
     digestId: "digest-1",
-    status: "completed",
+    status: "running",
   });
 });
 
