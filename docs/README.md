@@ -10,6 +10,7 @@
 | [002](changes/arch/002_drizzle-shared-db-and-migrations.md) | 2026-03-30 | 统一 Drizzle 共享数据库层与迁移配置 |
 | [003](changes/arch/003_nextjs-worker-monolith-scaffold.md) | 2026-03-31 | Next.js 与 BullMQ Worker 单体骨架 |
 | [004](changes/arch/004_task0-backend-infra-and-pipeline-tracking.md) | 2026-03-31 | Task 0 后端基础工具层与 Pipeline Tracking |
+| [005](changes/arch/005_task1-source-import-pipeline.md) | 2026-03-31 | Task 1 来源接入 Pipeline |
 
 ### 运维变更
 

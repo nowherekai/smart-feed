@@ -1,13 +1,16 @@
 import type { Job, Processor } from "bullmq";
 
-import { type JobName, jobNames } from "../queue";
+import { type JobName, jobNames } from "../../queue";
+import { type SourceImportPipelineResult, sourceImportHandler } from "./source-import";
 
 export type PipelineJobData = Record<string, unknown>;
 
-export type PipelineJobResult = {
+type PlaceholderPipelineJobResult = {
   jobName: string;
   status: "pending_implementation";
 };
+
+export type PipelineJobResult = PlaceholderPipelineJobResult | SourceImportPipelineResult;
 
 type PipelineProcessor = Processor<PipelineJobData, PipelineJobResult, JobName>;
 
@@ -21,7 +24,7 @@ async function placeholderHandler(job: Job<PipelineJobData, PipelineJobResult, J
 }
 
 export const pipelineHandlers = {
-  [jobNames.sourceImport]: placeholderHandler,
+  [jobNames.sourceImport]: sourceImportHandler as PipelineProcessor,
   [jobNames.sourceFetch]: placeholderHandler,
   [jobNames.contentFetchHtml]: placeholderHandler,
   [jobNames.contentNormalize]: placeholderHandler,
