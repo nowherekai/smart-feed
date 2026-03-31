@@ -3,9 +3,13 @@ import { expect, test } from "bun:test";
 import { verifyAndPrepareRssSource } from "./source";
 
 test("verifyAndPrepareRssSource normalizes RSS URL and extracts metadata", async () => {
+  let capturedRequest: RequestInit | undefined;
+
   const prepared = await verifyAndPrepareRssSource("HTTPS://Example.com:443/feed.xml", {
-    fetch: async () =>
-      new Response(
+    fetch: async (_input, init) => {
+      capturedRequest = init;
+
+      return new Response(
         `<?xml version="1.0" encoding="UTF-8"?>
          <rss version="2.0">
            <channel>
@@ -13,7 +17,8 @@ test("verifyAndPrepareRssSource normalizes RSS URL and extracts metadata", async
              <link>https://example.com</link>
            </channel>
          </rss>`,
-      ),
+      );
+    },
   });
 
   expect(prepared).toEqual({
@@ -21,6 +26,7 @@ test("verifyAndPrepareRssSource normalizes RSS URL and extracts metadata", async
     title: "Example Feed",
     siteUrl: "https://example.com",
   });
+  expect(new Headers(capturedRequest?.headers).get("user-agent")).toBe("smart-feed/1.0 (+https://github.com/nowherekai/smart-feed)");
 });
 
 test("verifyAndPrepareRssSource rejects unsupported protocols", async () => {
