@@ -44,7 +44,7 @@ function renderItem(item: DigestRenderableItem): string {
     "",
     `来源: ${sanitizeInlineText(item.sourceName)} (\`${sanitizeInlineText(item.sourceTraceId)}\`)`,
     `内容追踪: \`${sanitizeInlineText(item.contentTraceId)}\``,
-    `原文: [原文链接](${item.originalUrl})`,
+    `原文: [原文链接](<${item.originalUrl}>)`,
     `证据: ${sanitizeBlockText(item.evidenceSnippet)}`,
   ];
 

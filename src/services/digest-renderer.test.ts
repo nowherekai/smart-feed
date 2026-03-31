@@ -11,7 +11,7 @@ test("renderDigestMarkdown includes traceability fields for each item", () => {
           {
             contentTraceId: "content-123",
             evidenceSnippet: "A traceable evidence snippet.",
-            originalUrl: "https://example.com/post",
+            originalUrl: "https://example.com/post(1)",
             sourceName: "Example Feed",
             sourceTraceId: "source-abc",
             summary: {
@@ -33,7 +33,7 @@ test("renderDigestMarkdown includes traceability fields for each item", () => {
   expect(markdown).toContain("> One-line summary");
   expect(markdown).toContain("来源: Example Feed (`source-abc`)");
   expect(markdown).toContain("内容追踪: `content-123`");
-  expect(markdown).toContain("原文: [原文链接](https://example.com/post)");
+  expect(markdown).toContain("原文: [原文链接](<https://example.com/post(1)>)");
   expect(markdown).toContain("证据: A traceable evidence snippet.");
 });
 
