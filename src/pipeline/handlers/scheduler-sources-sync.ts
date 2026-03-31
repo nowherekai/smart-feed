@@ -55,14 +55,8 @@ export function createSchedulerSourcesSyncHandler(deps: SchedulerSourcesSyncDeps
   ): Promise<SchedulerSourcesSyncPipelineResult> {
     const sourceIds = await getActiveSourceIds();
     const queue = createSourceFetchQueue();
-
-    let queuedSourceCount = 0;
-
-    for (const sourceId of sourceIds) {
-      if (await enqueueSourceFetch(queue, sourceId)) {
-        queuedSourceCount += 1;
-      }
-    }
+    const enqueueResults = await Promise.all(sourceIds.map((sourceId) => enqueueSourceFetch(queue, sourceId)));
+    const queuedSourceCount = enqueueResults.filter(Boolean).length;
 
     return {
       jobName: job.name,
