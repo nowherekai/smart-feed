@@ -15,6 +15,7 @@
 
 | 编号 | 日期 | 标题 |
 |------|------|------|
+| [001](changes/ops/001_github-actions-ci-lockfile-enforcement.md) | 2026-03-31 | GitHub Actions CI 锁定 Bun lockfile |
 
 ### 故障修复
 

@@ -1,6 +1,6 @@
 import type { Job, Processor } from "bullmq";
 
-import { jobNames, type JobName } from "../queue";
+import { type JobName, jobNames } from "../queue";
 
 export type PipelineJobData = Record<string, unknown>;
 
@@ -11,9 +11,7 @@ export type PipelineJobResult = {
 
 type PipelineProcessor = Processor<PipelineJobData, PipelineJobResult, JobName>;
 
-async function placeholderHandler(
-  job: Job<PipelineJobData, PipelineJobResult, JobName>,
-): Promise<PipelineJobResult> {
+async function placeholderHandler(job: Job<PipelineJobData, PipelineJobResult, JobName>): Promise<PipelineJobResult> {
   console.info(`[pipeline] placeholder handler invoked for ${job.name}`);
 
   return {

@@ -1,4 +1,4 @@
-import { Queue, type Processor, Worker } from "bullmq";
+import { type Processor, Queue, Worker } from "bullmq";
 import IORedis from "ioredis";
 
 import { defaultJobOptions, queueName, workerConcurrency } from "./config";
@@ -31,11 +31,9 @@ export function createQueue<TData = Record<string, unknown>, TResult = unknown>(
   return cachedQueue as Queue<TData, TResult>;
 }
 
-export function createWorker<
-  TData = Record<string, unknown>,
-  TResult = unknown,
-  TName extends string = string,
->(processor: Processor<TData, TResult, TName>) {
+export function createWorker<TData = Record<string, unknown>, TResult = unknown, TName extends string = string>(
+  processor: Processor<TData, TResult, TName>,
+) {
   return new Worker<TData, TResult, TName>(queueName, processor, {
     connection: getRedisConnection(),
     concurrency: workerConcurrency,

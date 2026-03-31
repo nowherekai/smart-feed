@@ -25,10 +25,7 @@ export async function createPipelineRun(data: NewPipelineRun): Promise<PipelineR
   return requireInsertedRow(pipelineRun, "pipeline run");
 }
 
-export async function updatePipelineRun(
-  id: string,
-  data: PipelineRunUpdate,
-): Promise<void> {
+export async function updatePipelineRun(id: string, data: PipelineRunUpdate): Promise<void> {
   if (Object.keys(data).length === 0) {
     return;
   }
@@ -53,11 +50,4 @@ export async function updateStepRun(id: string, data: StepRunUpdate): Promise<vo
   await db.update(stepRuns).set(data).where(eq(stepRuns.id, id));
 }
 
-export type {
-  NewPipelineRun,
-  NewStepRun,
-  PipelineRun,
-  PipelineRunUpdate,
-  StepRun,
-  StepRunUpdate,
-};
+export type { NewPipelineRun, NewStepRun, PipelineRun, PipelineRunUpdate, StepRun, StepRunUpdate };

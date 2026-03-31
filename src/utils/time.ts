@@ -78,30 +78,13 @@ function shiftCalendarDay(parts: ZonedDateParts, deltaDays: number) {
 
 function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
   const parts = getZonedDateParts(date, timeZone);
-  const asUtc = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    parts.second,
-  );
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
 
   return asUtc - date.getTime();
 }
 
-function zonedDateTimeToUtc(
-  parts: ZonedDateParts,
-  timeZone: string,
-): Date {
-  const guess = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    parts.second,
-  );
+function zonedDateTimeToUtc(parts: ZonedDateParts, timeZone: string): Date {
+  const guess = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
 
   // 这里用一次 offset 反推 UTC 即可。
   // 对 Asia/Shanghai 这类无 DST 的业务时区，offset 在当天是稳定的，
@@ -120,19 +103,11 @@ function getLocalWallClockMs(date: Date, timeZone: string): number {
   return date.getTime() + getTimeZoneOffsetMs(date, timeZone);
 }
 
-export function getEffectiveTime(
-  publishedAt?: Date | null,
-  fetchedAt?: Date | null,
-): Date | null {
+export function getEffectiveTime(publishedAt?: Date | null, fetchedAt?: Date | null): Date | null {
   return publishedAt ?? fetchedAt ?? null;
 }
 
-export function isInTimeWindow(
-  effectiveTime: Date,
-  windowHours: number,
-  timeZone: string,
-  now = new Date(),
-): boolean {
+export function isInTimeWindow(effectiveTime: Date, windowHours: number, timeZone: string, now = new Date()): boolean {
   assertValidTimeZone(timeZone);
   assertNonNegativeNumber("windowHours", windowHours);
 
@@ -161,8 +136,7 @@ export function getDigestWindow(
   }
 
   const nowParts = getZonedDateParts(now, timeZone);
-  const anchorDate =
-    nowParts.hour < sendHour ? shiftCalendarDay(nowParts, -1) : nowParts;
+  const anchorDate = nowParts.hour < sendHour ? shiftCalendarDay(nowParts, -1) : nowParts;
   const windowEnd = zonedDateTimeToUtc(
     {
       year: anchorDate.year,

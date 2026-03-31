@@ -1,6 +1,6 @@
 import type { Job } from "bullmq";
 
-import { pipelineHandlers, type PipelineJobData, type PipelineJobResult } from "../pipeline";
+import { type PipelineJobData, type PipelineJobResult, pipelineHandlers } from "../pipeline";
 import { closeRedisConnection, createWorker, type JobName } from "../queue";
 
 function getHandler(jobName: string) {
@@ -17,9 +17,7 @@ async function main() {
   console.info("[worker] Starting smart-feed worker...");
 
   const worker = createWorker(
-    async (
-      job: Job<PipelineJobData, PipelineJobResult, JobName>,
-    ): Promise<PipelineJobResult> => {
+    async (job: Job<PipelineJobData, PipelineJobResult, JobName>): Promise<PipelineJobResult> => {
       const handler = getHandler(job.name);
       return handler(job);
     },
