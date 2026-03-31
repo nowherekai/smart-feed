@@ -40,6 +40,16 @@ type AiClientDeps = {
   openRouterProviderFactory?: OpenRouterProviderFactory;
 };
 
+type StructuredPromptDefinition<TOutput> = {
+  buildMessages: (input: AiPromptInput) => {
+    prompt: string;
+    system: string;
+  };
+  schema: ZodType<TOutput>;
+  schemaDescription: string;
+  schemaName: string;
+};
+
 class AiProviderUnavailableError extends Error {
   readonly code = "AI_PROVIDER_UNAVAILABLE";
 
@@ -313,6 +323,37 @@ function createAiClient(deps: AiClientDeps = {}) {
     return runtimeState;
   }
 
+  async function runStructuredPrompt<TOutput>(options: {
+    buildDummyOutput: (input: AiPromptInput) => TOutput;
+    input: AiPromptInput;
+    kind: AiTaskKind;
+    promptDefinition: StructuredPromptDefinition<TOutput>;
+  }): Promise<TOutput> {
+    const { buildDummyOutput, input, kind, promptDefinition } = options;
+    const runtimeState = assertAiAvailable();
+
+    if (runtimeState === "dummy") {
+      return promptDefinition.schema.parse(buildDummyOutput(input));
+    }
+
+    const provider = openRouterProviderFactory({
+      apiKey: resolveOpenRouterApiKey(env),
+      baseURL: env.openRouterBaseUrl,
+      name: "openrouter",
+    });
+    const messages = promptDefinition.buildMessages(input);
+    const result = await generateStructuredObject({
+      model: provider.chat(resolveModelId(kind, env)),
+      prompt: messages.prompt,
+      schema: promptDefinition.schema,
+      schemaDescription: promptDefinition.schemaDescription,
+      schemaName: promptDefinition.schemaName,
+      system: messages.system,
+    });
+
+    return promptDefinition.schema.parse(result.object);
+  }
+
   return {
     assertAiAvailable,
     getAiRuntimeState,
@@ -320,54 +361,20 @@ function createAiClient(deps: AiClientDeps = {}) {
       return resolveTaskConfig(kind, env);
     },
     async runBasicAnalysis(input: AiPromptInput): Promise<BasicAnalysis> {
-      const promptDefinition = getPromptDefinition("basic-analysis-v1");
-      const runtimeState = assertAiAvailable();
-
-      if (runtimeState === "dummy") {
-        return promptDefinition.schema.parse(buildDummyBasicAnalysis(input));
-      }
-
-      const provider = openRouterProviderFactory({
-        apiKey: resolveOpenRouterApiKey(env),
-        baseURL: env.openRouterBaseUrl,
-        name: "openrouter",
+      return runStructuredPrompt({
+        buildDummyOutput: buildDummyBasicAnalysis,
+        input,
+        kind: "basic",
+        promptDefinition: getPromptDefinition("basic-analysis-v1"),
       });
-      const messages = promptDefinition.buildMessages(input);
-      const result = await generateStructuredObject({
-        model: provider.chat(resolveModelId("basic", env)),
-        prompt: messages.prompt,
-        schema: promptDefinition.schema,
-        schemaDescription: promptDefinition.schemaDescription,
-        schemaName: promptDefinition.schemaName,
-        system: messages.system,
-      });
-
-      return promptDefinition.schema.parse(result.object);
     },
     async runHeavySummary(input: AiPromptInput): Promise<HeavySummary> {
-      const promptDefinition = getPromptDefinition("heavy-summary-v1");
-      const runtimeState = assertAiAvailable();
-
-      if (runtimeState === "dummy") {
-        return promptDefinition.schema.parse(buildDummyHeavySummary(input));
-      }
-
-      const provider = openRouterProviderFactory({
-        apiKey: resolveOpenRouterApiKey(env),
-        baseURL: env.openRouterBaseUrl,
-        name: "openrouter",
+      return runStructuredPrompt({
+        buildDummyOutput: buildDummyHeavySummary,
+        input,
+        kind: "heavy",
+        promptDefinition: getPromptDefinition("heavy-summary-v1"),
       });
-      const messages = promptDefinition.buildMessages(input);
-      const result = await generateStructuredObject({
-        model: provider.chat(resolveModelId("heavy", env)),
-        prompt: messages.prompt,
-        schema: promptDefinition.schema,
-        schemaDescription: promptDefinition.schemaDescription,
-        schemaName: promptDefinition.schemaName,
-        system: messages.system,
-      });
-
-      return promptDefinition.schema.parse(result.object);
     },
   };
 }
