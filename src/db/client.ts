@@ -33,12 +33,28 @@ export function getDb(): Database {
 }
 
 function createLazyProxy<T extends object>(factory: () => T): T {
+  let instance: T | null = null;
+
+  function getInstance(): T {
+    instance ??= factory();
+    return instance;
+  }
+
   return new Proxy({} as T, {
-    get(_target, property, receiver) {
-      const target = factory();
-      const value = Reflect.get(target, property, receiver);
+    get(_target, property) {
+      const target = getInstance();
+      const value = Reflect.get(target, property);
 
       return typeof value === "function" ? value.bind(target) : value;
+    },
+    ownKeys() {
+      return Reflect.ownKeys(getInstance());
+    },
+    getOwnPropertyDescriptor(_target, property) {
+      return Reflect.getOwnPropertyDescriptor(getInstance(), property);
+    },
+    has(_target, property) {
+      return Reflect.has(getInstance(), property);
     },
   });
 }
