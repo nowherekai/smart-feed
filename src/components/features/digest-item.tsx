@@ -3,7 +3,7 @@ import Link from "next/link";
 import { EvidenceTooltip } from "@/components/features/evidence-tooltip";
 import type { DigestItemRecord } from "@/components/features/intelligence-view-model";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 
 interface DigestItemProps {
   record: DigestItemRecord;
