@@ -681,3 +681,9 @@ export const stepRuns = pgTable(
     stepRunStepIdx: index("idx_step_runs_step_name").on(table.stepName),
   }),
 );
+
+// --- Inferred Types ---
+export type Source = typeof sources.$inferSelect;
+export type ContentItem = typeof contentItems.$inferSelect;
+export type AnalysisRecord = typeof analysisRecords.$inferSelect;
+export type DigestReport = typeof digestReports.$inferSelect;
