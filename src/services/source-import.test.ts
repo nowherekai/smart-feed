@@ -30,11 +30,13 @@ function createImportHarness() {
   }> = [];
   const enqueued: Array<{ importRunId?: string; sourceId: string; trigger: "source.import" | "scheduler" }> = [];
   const sources = new Map<string, { id: string; identifier: string }>();
+  const createdSources: CreateSourceInput[] = [];
 
   return {
     runs,
     items,
     enqueued,
+    createdSources,
     deps: {
       async createImportRun(data: CreateImportRunInput) {
         const run: InMemoryRun = {
@@ -107,6 +109,8 @@ function createImportHarness() {
         return sources.get(identifier) ?? null;
       },
       async createSource(data: CreateSourceInput) {
+        createdSources.push(data);
+
         const source = {
           id: crypto.randomUUID(),
           identifier: data.identifier,
@@ -160,6 +164,12 @@ test("runSourceImport creates a single RSS source and enqueues first fetch", asy
   expect(harness.items).toHaveLength(1);
   expect(harness.items[0]?.result).toBe("created");
   expect(harness.enqueued).toHaveLength(1);
+  expect(harness.createdSources).toHaveLength(1);
+  expect(harness.createdSources[0]).toMatchObject({
+    identifier: "https://example.com/feed.xml",
+    title: "title:https://example.com/feed.xml",
+    siteUrl: "https://site/feed.xml",
+  });
 });
 
 test("runSourceImport marks duplicate and failed items during OPML batch import", async () => {
