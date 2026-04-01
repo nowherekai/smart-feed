@@ -9,7 +9,7 @@ import { and, desc, eq, gte, lte, ne } from "drizzle-orm";
 import { type AppEnv, getAppEnv } from "../config";
 import { type AnalysisSummary, analysisRecords, contentItems, digestItems, digestReports, getDb, sources } from "../db";
 import { createCompletedStepResult, type PipelineStepResult } from "../pipeline/types";
-import { jobNames } from "../queue";
+import { smartFeedTaskNames } from "../queue";
 import { getDigestWindow } from "../utils";
 import { type DigestRenderableItem, type DigestRenderSection, renderDigestMarkdown } from "./digest-renderer";
 import { canEnterDigest } from "./traceability";
@@ -491,9 +491,9 @@ export async function runDigestCompose(
     nextStep: {
       data: {
         digestId,
-        trigger: jobNames.digestCompose,
+        trigger: smartFeedTaskNames.digestCompose,
       },
-      jobName: jobNames.digestDeliver,
+      jobName: smartFeedTaskNames.digestDeliver,
     },
     payload: buildPayload({
       digestDate,

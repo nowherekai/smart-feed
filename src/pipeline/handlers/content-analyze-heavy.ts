@@ -4,7 +4,7 @@
  */
 
 import type { Job } from "bullmq";
-import type { JobName } from "../../queue";
+import type { SmartFeedTaskName } from "../../queue";
 import { type ContentAnalyzeHeavyPayload, runContentAnalyzeHeavy } from "../../services/analysis";
 import type { ContentAnalyzeHeavyJobData } from "../../services/content";
 import { type ContentPipelineRuntimeDeps, executeContentPipelineStep } from "../../services/pipeline-runtime";
@@ -25,7 +25,7 @@ export function createContentAnalyzeHeavyHandler(
   runtimeDeps?: ContentPipelineRuntimeDeps,
 ) {
   return async function contentAnalyzeHeavyHandler(
-    job: Job<ContentAnalyzeHeavyJobData, ContentAnalyzeHeavyPipelineResult, JobName>,
+    job: Job<ContentAnalyzeHeavyJobData, ContentAnalyzeHeavyPipelineResult, SmartFeedTaskName>,
   ): Promise<ContentAnalyzeHeavyPipelineResult> {
     return executeContentPipelineStep({
       deps: runtimeDeps,

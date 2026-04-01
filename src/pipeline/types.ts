@@ -3,7 +3,7 @@
  * 定义流水线各个步骤的输入、输出、状态以及链式触发的结构。
  */
 
-import type { JobName } from "../queue";
+import type { SmartFeedTaskName } from "../queue";
 
 /** 步骤执行的详细结果：完成、带降级的完成、失败 */
 export type PipelineStepOutcome = "completed" | "completed_with_fallback" | "failed";
@@ -16,7 +16,7 @@ export type PipelineNextStep<TData extends Record<string, unknown> = Record<stri
   /** 传递给下一步的数据 */
   data: TData;
   /** 下一步的任务名称 */
-  jobName: JobName;
+  jobName: SmartFeedTaskName;
 };
 
 /**
@@ -43,7 +43,7 @@ export type PipelineStepResult<
  * 包含流水线运行 ID 和是否成功入队下一步等运行信息。
  */
 export type PipelineStepExecutionResult<TPayload extends Record<string, unknown> = Record<string, unknown>> = {
-  jobName: JobName;
+  jobName: SmartFeedTaskName;
   message?: string | null;
   nextStepQueued: boolean;
   outcome: PipelineStepOutcome;

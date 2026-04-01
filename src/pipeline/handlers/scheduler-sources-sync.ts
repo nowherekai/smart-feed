@@ -5,9 +5,14 @@
 
 import type { Job, Queue } from "bullmq";
 
-import { buildSourceFetchDeduplicationId, createQueue, type JobName, jobNames } from "../../queue";
+import {
+  buildSourceFetchDeduplicationId,
+  getQueueForTask,
+  type SmartFeedTaskName,
+  smartFeedTaskNames,
+} from "../../queue";
 import type { SourceFetchJobData } from "../../services/content";
-import { listActiveSourceIds } from "../../services/source";
+import { listSourceIdsDueForSync } from "../../services/source";
 
 /** 调度同步任务输入数据类型 */
 export type SchedulerSourcesSyncJobData = {
@@ -25,8 +30,8 @@ export type SchedulerSourcesSyncPipelineResult = {
 
 /** 处理器依赖项 */
 export type SchedulerSourcesSyncDeps = {
-  createQueue?: () => Queue<SourceFetchJobData, unknown, string>;
-  listActiveSourceIds?: () => Promise<string[]>;
+  getSourceFetchQueue?: () => Queue<SourceFetchJobData, unknown, string>;
+  listSourceIdsDueForSync?: () => Promise<string[]>;
 };
 
 /**
@@ -46,7 +51,7 @@ async function enqueueSourceFetch(
   }
 
   await queue.add(
-    jobNames.sourceFetch,
+    smartFeedTaskNames.sourceFetch,
     {
       sourceId,
       trigger: "scheduler",
@@ -65,15 +70,16 @@ async function enqueueSourceFetch(
  * 创建调度同步任务处理器
  */
 export function createSchedulerSourcesSyncHandler(deps: SchedulerSourcesSyncDeps = {}) {
-  const getActiveSourceIds = deps.listActiveSourceIds ?? listActiveSourceIds;
-  const createSourceFetchQueue = deps.createQueue ?? (() => createQueue<SourceFetchJobData>());
+  const getDueSourceIds = deps.listSourceIdsDueForSync ?? listSourceIdsDueForSync;
+  const getSourceFetchQueue =
+    deps.getSourceFetchQueue ?? (() => getQueueForTask<SourceFetchJobData>(smartFeedTaskNames.sourceFetch));
 
   return async function schedulerSourcesSyncHandler(
-    job: Job<SchedulerSourcesSyncJobData, SchedulerSourcesSyncPipelineResult, JobName>,
+    job: Job<SchedulerSourcesSyncJobData, SchedulerSourcesSyncPipelineResult, SmartFeedTaskName>,
   ): Promise<SchedulerSourcesSyncPipelineResult> {
-    // 1. 获取所有状态为 active 的来源 ID
-    const sourceIds = await getActiveSourceIds();
-    const queue = createSourceFetchQueue();
+    // 1. 获取当前调度周期内需要同步的来源 ID
+    const sourceIds = await getDueSourceIds();
+    const queue = getSourceFetchQueue();
 
     // 2. 逐个将来源抓取任务入队（使用 Promise.all 并行处理）
     const enqueueResults = await Promise.all(sourceIds.map((sourceId) => enqueueSourceFetch(queue, sourceId)));

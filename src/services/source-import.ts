@@ -7,7 +7,7 @@
 import { eq } from "drizzle-orm";
 import { getDb, sourceImportRunItems, sourceImportRuns } from "../db";
 import { type ParsedOpmlSource, parseOpml } from "../parsers";
-import { buildSourceFetchDeduplicationId, createQueue, jobNames } from "../queue";
+import { buildSourceFetchDeduplicationId, getQueueForTask, smartFeedTaskNames } from "../queue";
 import { logger } from "../utils";
 import type { SourceFetchJobData } from "./content";
 import {
@@ -113,8 +113,8 @@ async function createImportRunItem(data: NewSourceImportRunItem): Promise<Source
 
 /** 为新导入成功的来源入队首次抓取任务 */
 async function enqueueSourceFetch(data: SourceFetchJobData): Promise<void> {
-  const queue = createQueue<SourceFetchJobData>();
-  await queue.add(jobNames.sourceFetch, data, {
+  const queue = getQueueForTask<SourceFetchJobData>(smartFeedTaskNames.sourceFetch);
+  await queue.add(smartFeedTaskNames.sourceFetch, data, {
     deduplication: {
       id: buildSourceFetchDeduplicationId(data.sourceId),
     },

@@ -4,7 +4,7 @@
  */
 
 import type { Job } from "bullmq";
-import type { JobName } from "../../queue";
+import type { SmartFeedTaskName } from "../../queue";
 import {
   type ContentNormalizeJobData,
   type ContentNormalizePayload,
@@ -26,7 +26,7 @@ export function createContentNormalizeHandler(
   runtimeDeps?: ContentPipelineRuntimeDeps,
 ) {
   return async function contentNormalizeHandler(
-    job: Job<ContentNormalizeJobData, ContentNormalizePipelineResult, JobName>,
+    job: Job<ContentNormalizeJobData, ContentNormalizePipelineResult, SmartFeedTaskName>,
   ): Promise<ContentNormalizePipelineResult> {
     return executeContentPipelineStep({
       deps: runtimeDeps,

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import { createSchedulerSourcesSyncHandler } from "./scheduler-sources-sync";
 
-test("schedulerSourcesSyncHandler scans active sources and enqueues deduplicated source.fetch jobs", async () => {
+test("schedulerSourcesSyncHandler scans due sources and enqueues deduplicated source.fetch jobs", async () => {
   const queuedJobs: Array<{
     data: Record<string, unknown>;
     jobName: string;
@@ -10,7 +10,7 @@ test("schedulerSourcesSyncHandler scans active sources and enqueues deduplicated
   }> = [];
 
   const handler = createSchedulerSourcesSyncHandler({
-    createQueue: () =>
+    getSourceFetchQueue: () =>
       ({
         async getDeduplicationJobId() {
           return null;
@@ -27,7 +27,7 @@ test("schedulerSourcesSyncHandler scans active sources and enqueues deduplicated
           };
         },
       }) as never,
-    async listActiveSourceIds() {
+    async listSourceIdsDueForSync() {
       return ["source-1", "source-2"];
     },
   });
@@ -76,7 +76,7 @@ test("schedulerSourcesSyncHandler does not overcount queuedSourceCount when dedu
   const queuedJobs: string[] = [];
 
   const handler = createSchedulerSourcesSyncHandler({
-    createQueue: () =>
+    getSourceFetchQueue: () =>
       ({
         async getDeduplicationJobId(id: string) {
           return id === "source.fetch:source-2" ? "existing-job-2" : null;
@@ -89,7 +89,7 @@ test("schedulerSourcesSyncHandler does not overcount queuedSourceCount when dedu
           };
         },
       }) as never,
-    async listActiveSourceIds() {
+    async listSourceIdsDueForSync() {
       return ["source-1", "source-2"];
     },
   });

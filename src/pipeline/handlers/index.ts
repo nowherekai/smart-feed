@@ -1,11 +1,11 @@
 /**
  * 流水线处理器注册模块
- * 负责将所有的任务处理函数 (Handlers) 映射到其对应的任务名称 (JobNames)。
+ * 负责将所有处理器映射到其对应的任务类型。
  */
 
 import type { Processor } from "bullmq";
 
-import { type JobName, jobNames } from "../../queue";
+import { type SmartFeedTaskName, smartFeedTaskNames } from "../../queue";
 import { type ContentAnalyzeBasicPipelineResult, contentAnalyzeBasicHandler } from "./content-analyze-basic";
 import { type ContentAnalyzeHeavyPipelineResult, contentAnalyzeHeavyHandler } from "./content-analyze-heavy";
 import { type ContentFetchHtmlPipelineResult, contentFetchHtmlHandler } from "./content-fetch-html";
@@ -32,20 +32,20 @@ export type PipelineJobResult =
   | DigestDeliverPipelineResult;
 
 /** 处理器函数类型 */
-type PipelineProcessor = Processor<PipelineJobData, PipelineJobResult, JobName>;
+type PipelineProcessor = Processor<PipelineJobData, PipelineJobResult, SmartFeedTaskName>;
 
 /**
  * 全局流水线处理器映射表
- * 定义了 Worker 在收到特定 JobName 时应该调用哪个 Handler。
+ * 定义了 Worker 在收到特定任务类型时应该调用哪个 Handler。
  */
 export const pipelineHandlers = {
-  [jobNames.schedulerSourcesSync]: schedulerSourcesSyncHandler as PipelineProcessor,
-  [jobNames.sourceImport]: sourceImportHandler as PipelineProcessor,
-  [jobNames.sourceFetch]: sourceFetchHandler as PipelineProcessor,
-  [jobNames.contentFetchHtml]: contentFetchHtmlHandler as PipelineProcessor,
-  [jobNames.contentNormalize]: contentNormalizeHandler as PipelineProcessor,
-  [jobNames.contentAnalyzeBasic]: contentAnalyzeBasicHandler as PipelineProcessor,
-  [jobNames.contentAnalyzeHeavy]: contentAnalyzeHeavyHandler as PipelineProcessor,
-  [jobNames.digestCompose]: digestComposeHandler as PipelineProcessor,
-  [jobNames.digestDeliver]: digestDeliverHandler as PipelineProcessor,
-} satisfies Record<JobName, PipelineProcessor>;
+  [smartFeedTaskNames.schedulerSourcesSync]: schedulerSourcesSyncHandler as PipelineProcessor,
+  [smartFeedTaskNames.sourceImport]: sourceImportHandler as PipelineProcessor,
+  [smartFeedTaskNames.sourceFetch]: sourceFetchHandler as PipelineProcessor,
+  [smartFeedTaskNames.contentFetchHtml]: contentFetchHtmlHandler as PipelineProcessor,
+  [smartFeedTaskNames.contentNormalize]: contentNormalizeHandler as PipelineProcessor,
+  [smartFeedTaskNames.contentAnalyzeBasic]: contentAnalyzeBasicHandler as PipelineProcessor,
+  [smartFeedTaskNames.contentAnalyzeHeavy]: contentAnalyzeHeavyHandler as PipelineProcessor,
+  [smartFeedTaskNames.digestCompose]: digestComposeHandler as PipelineProcessor,
+  [smartFeedTaskNames.digestDeliver]: digestDeliverHandler as PipelineProcessor,
+} satisfies Record<SmartFeedTaskName, PipelineProcessor>;

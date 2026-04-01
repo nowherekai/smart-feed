@@ -5,7 +5,7 @@
  */
 
 import type { PipelineStepExecutionResult, PipelineStepResult } from "../pipeline/types";
-import { createQueue, type JobName } from "../queue";
+import { getQueueForTask, type SmartFeedTaskName } from "../queue";
 import {
   createPipelineRun,
   createStepRun,
@@ -19,7 +19,7 @@ import {
 const DIGEST_PIPELINE_NAME = "digest-generation";
 const DIGEST_PIPELINE_VERSION = "v1";
 
-type EnqueueJob = (jobName: JobName, data: Record<string, unknown>) => Promise<void>;
+type EnqueueJob = (taskName: SmartFeedTaskName, data: Record<string, unknown>) => Promise<void>;
 
 /** 摘要任务的基础数据结构 */
 type DigestPipelineJobData = {
@@ -46,7 +46,7 @@ type ExecuteDigestPipelineStepOptions<
 > = {
   deps?: DigestPipelineRuntimeDeps;
   jobData: TJobData;
-  jobName: JobName;
+  jobName: SmartFeedTaskName;
   /** 从执行结果或数据中提取 digestId，用于关联记录 */
   resolveDigestId?: (result: PipelineStepResult<TPayload> & { jobData: TJobData }) => string | null;
   runStep: (jobData: TJobData) => Promise<PipelineStepResult<TPayload>>;
@@ -60,9 +60,9 @@ function serialize(value: unknown): string | null {
   return JSON.stringify(value);
 }
 
-async function defaultEnqueueJob(jobName: JobName, data: Record<string, unknown>): Promise<void> {
-  const queue = createQueue<Record<string, unknown>>();
-  await queue.add(jobName, data);
+async function defaultEnqueueJob(taskName: SmartFeedTaskName, data: Record<string, unknown>): Promise<void> {
+  const queue = getQueueForTask<Record<string, unknown>>(taskName);
+  await queue.add(taskName, data);
 }
 
 function buildRuntimeDeps(overrides: DigestPipelineRuntimeDeps = {}): Required<DigestPipelineRuntimeDeps> {

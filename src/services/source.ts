@@ -3,7 +3,7 @@
  * 负责信息源（Source）的验证、元数据提取、数据库查询及创建操作。
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { XMLParser } from "fast-xml-parser";
 
 import { getDb, sources } from "../db";
@@ -208,6 +208,27 @@ export async function listActiveSourceIds(): Promise<string[]> {
     })
     .from(sources)
     .where(eq(sources.status, "active"));
+
+  return rows.map((row) => row.id);
+}
+
+/**
+ * 获取当前调度周期内需要同步的活跃来源 ID 列表
+ * 基于最近一次成功同步时间做门控，失败重试不受 lastPolledAt 影响。
+ */
+export async function listSourceIdsDueForSync(): Promise<string[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: sources.id,
+    })
+    .from(sources)
+    .where(
+      and(
+        eq(sources.status, "active"),
+        or(isNull(sources.lastSuccessfulSyncAt), lt(sources.lastSuccessfulSyncAt, sql`NOW() - INTERVAL '1 hour'`)),
+      ),
+    );
 
   return rows.map((row) => row.id);
 }

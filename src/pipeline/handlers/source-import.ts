@@ -5,7 +5,7 @@
 
 import type { Job } from "bullmq";
 
-import type { JobName } from "../../queue";
+import type { SmartFeedTaskName } from "../../queue";
 import { runSourceImport, type SourceImportJobData } from "../../services/source-import";
 
 /** 来源导入流水线结果类型 */
@@ -32,7 +32,7 @@ export type SourceImportPipelineResult = {
  * 逻辑委托给 services/source-import 的 runSourceImport 实现。
  */
 export async function sourceImportHandler(
-  job: Job<SourceImportJobData, SourceImportPipelineResult, JobName>,
+  job: Job<SourceImportJobData, SourceImportPipelineResult, SmartFeedTaskName>,
 ): Promise<SourceImportPipelineResult> {
   const result = await runSourceImport(job.data);
 

@@ -20,7 +20,7 @@ import {
 import { type AppEnv, getAppEnv } from "../config";
 import { analysisRecords, contentItems, getDb, sources } from "../db";
 import { createCompletedStepResult, createFailedStepResult, type PipelineStepResult } from "../pipeline/types";
-import { jobNames } from "../queue";
+import { smartFeedTaskNames } from "../queue";
 import type { ContentAnalyzeBasicJobData, ContentAnalyzeHeavyJobData } from "./content";
 import { canEnterDigest } from "./traceability";
 
@@ -361,7 +361,7 @@ export async function runContentAnalyzeBasic(
       nextStep: thresholdExceeded
         ? {
             data: { contentId: record.content.id, trigger: "content.analyze.basic" },
-            jobName: jobNames.contentAnalyzeHeavy,
+            jobName: smartFeedTaskNames.contentAnalyzeHeavy,
           }
         : null,
       payload: {
@@ -421,7 +421,7 @@ export async function runContentAnalyzeBasic(
       nextStep: thresholdExceeded
         ? {
             data: { contentId: record.content.id, trigger: "content.analyze.basic" },
-            jobName: jobNames.contentAnalyzeHeavy,
+            jobName: smartFeedTaskNames.contentAnalyzeHeavy,
           }
         : null,
       payload: {
