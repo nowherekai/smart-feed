@@ -417,9 +417,9 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
                 <div className="space-y-2">
                   <div className="text-sm font-medium">失败明细</div>
                   <div className="space-y-2">
-                    {opmlImportResult.failedItems.map((item) => (
+                    {opmlImportResult.failedItems.map((item, index) => (
                       <div
-                        key={`${item.inputUrl}-${item.errorMessage}`}
+                        key={`${item.inputUrl}-${index}`}
                         className="rounded-lg border border-border bg-background/80 p-3"
                       >
                         <div className="truncate text-xs font-medium">{item.inputUrl}</div>
