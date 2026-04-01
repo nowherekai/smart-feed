@@ -18,6 +18,7 @@
 | [012](arch/012_digest-delivery-configurable-smtp-and-runtime-handoff.md) | 2026-03-31 | Digest Delivery 可配置 SMTP 投递与 Runtime 交接 |
 | [013](arch/013_task8-scheduler-layer-and-worker-lifecycle.md) | 2026-03-31 | Task 8 调度层与 Worker 生命周期收口 |
 | [014](arch/014_frontend-ui-architecture-setup.md) | 2026-04-01 | 前端 UI 架构与 Base UI 集成 |
+| [015](arch/015_frontend-component-boundaries-and-streaming.md) | 2026-04-01 | 前端组件边界瘦身与流式渲染整理 |
 
 ## 运维变更
 
