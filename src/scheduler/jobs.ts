@@ -102,8 +102,9 @@ export async function registerSchedulerJobs(
  * 移除所有已注册的调度任务（用于清理或优雅停机）
  */
 export async function removeSchedulerJobs(registry: QueueRegistry): Promise<void> {
-  await Promise.all([
-    registry[queueNames.sourceDispatch].removeJobScheduler(schedulerJobIds.sourcesSyncHourly),
-    registry[queueNames.digest].removeJobScheduler(schedulerJobIds.digestComposeDaily),
-  ]);
+  const definitions = buildSchedulerJobDefinitions(getAppEnv());
+
+  await Promise.all(
+    definitions.map((definition) => registry[definition.queueName].removeJobScheduler(definition.id)),
+  );
 }
