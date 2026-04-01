@@ -33,3 +33,4 @@
 
 | 编号 | 日期 | 标题 |
 |------|------|------|
+| [001](fix/001_drizzle-cli-env-loading.md) | 2026-04-01 | Drizzle CLI 未读取 .env.local 的迁移失败修复 |
