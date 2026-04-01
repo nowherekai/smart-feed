@@ -24,6 +24,26 @@ export type AddSourceResult =
       message: string;
     };
 
+export type OpmlImportFailedItem = {
+  inputUrl: string;
+  errorMessage: string;
+};
+
+export type ImportSourcesFromOpmlResult =
+  | {
+      status: "completed";
+      importRunId: string;
+      totalCount: number;
+      createdCount: number;
+      skippedCount: number;
+      failedCount: number;
+      failedItems: OpmlImportFailedItem[];
+    }
+  | {
+      status: "failed";
+      message: string;
+    };
+
 export async function getSources(): Promise<Source[]> {
   const result = await db.query.sources.findMany({
     orderBy: (t, { desc }) => [desc(t.createdAt)],
@@ -79,6 +99,49 @@ export async function addSource(url: string): Promise<AddSourceResult> {
     };
   } catch (error) {
     console.error("Failed to add source", error);
+
+    return {
+      status: "failed",
+      message: toFailureMessage(error),
+    };
+  }
+}
+
+export async function importSourcesFromOpml(opmlText: string): Promise<ImportSourcesFromOpmlResult> {
+  const normalizedOpmlText = opmlText.trim();
+
+  if (!normalizedOpmlText) {
+    return {
+      status: "failed",
+      message: "OPML file is empty.",
+    };
+  }
+
+  try {
+    const result = await runSourceImport({
+      mode: "opml",
+      opml: normalizedOpmlText,
+    });
+
+    revalidatePath("/sources");
+    revalidatePath("/");
+
+    return {
+      status: "completed",
+      importRunId: result.importRunId,
+      totalCount: result.totalCount,
+      createdCount: result.createdCount,
+      skippedCount: result.skippedCount,
+      failedCount: result.failedCount,
+      failedItems: result.items
+        .filter((item) => item.result === "failed")
+        .map((item) => ({
+          inputUrl: item.inputUrl,
+          errorMessage: item.errorMessage ?? "Unknown import error.",
+        })),
+    };
+  } catch (error) {
+    console.error("Failed to import OPML", error);
 
     return {
       status: "failed",

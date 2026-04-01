@@ -1,10 +1,25 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { FileUp, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useOptimistic, useState, useTransition } from "react";
+import {
+  type ChangeEvent,
+  type DragEvent,
+  type FormEvent,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { toast } from "sonner";
-import { type AddSourceResult, addSource, removeSource, toggleSourceStatus } from "@/app/actions/source-actions";
+import {
+  type AddSourceResult,
+  addSource,
+  type ImportSourcesFromOpmlResult,
+  importSourcesFromOpml,
+  removeSource,
+  toggleSourceStatus,
+} from "@/app/actions/source-actions";
 import type { SourceListItem } from "@/app/sources/types";
 import {
   AlertDialog,
@@ -21,10 +36,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type OptimisticSourceAction =
   | { type: "remove"; id: string }
   | { type: "toggle"; id: string; status: SourceListItem["status"] };
+
+type CompletedOpmlImportResult = Extract<ImportSourcesFromOpmlResult, { status: "completed" }>;
 
 type AddSourceFeedback = {
   message: string;
@@ -32,6 +50,17 @@ type AddSourceFeedback = {
   shouldRefresh: boolean;
   tone: "success" | "error";
 };
+
+type OpmlImportFeedback = {
+  message: string;
+  shouldClearFile: boolean;
+  shouldRefresh: boolean;
+  tone: "success" | "error";
+};
+
+export function getNextOpmlImportResult(result: ImportSourcesFromOpmlResult): CompletedOpmlImportResult | null {
+  return result.status === "completed" ? result : null;
+}
 
 export function getAddSourceFeedback(result: AddSourceResult): AddSourceFeedback {
   switch (result.status) {
@@ -66,10 +95,48 @@ export function getAddSourceFeedback(result: AddSourceResult): AddSourceFeedback
   }
 }
 
+export function getOpmlImportFeedback(result: ImportSourcesFromOpmlResult): OpmlImportFeedback {
+  if (result.status === "failed") {
+    return {
+      tone: "error",
+      message: result.message || "OPML 导入失败。",
+      shouldClearFile: false,
+      shouldRefresh: false,
+    };
+  }
+
+  if (result.totalCount === 0) {
+    return {
+      tone: "success",
+      message: "OPML 导入完成，但未发现可导入的订阅源。",
+      shouldClearFile: true,
+      shouldRefresh: true,
+    };
+  }
+
+  const parts = [`新增 ${result.createdCount}`, `已存在 ${result.skippedCount}`];
+
+  if (result.failedCount > 0) {
+    parts.push(`失败 ${result.failedCount}`);
+  }
+
+  return {
+    tone: "success",
+    message: `OPML 导入完成，共 ${result.totalCount} 条：${parts.join("，")}。`,
+    shouldClearFile: true,
+    shouldRefresh: true,
+  };
+}
+
 export function SourcesClient({ initialSources }: { initialSources: SourceListItem[] }) {
   const router = useRouter();
   const [newSourceUrl, setNewSourceUrl] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [selectedOpmlFile, setSelectedOpmlFile] = useState<File | null>(null);
+  const [opmlImportResult, setOpmlImportResult] = useState<CompletedOpmlImportResult | null>(null);
+  const [isOpmlDragActive, setIsOpmlDragActive] = useState(false);
+  const opmlFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isSourceMutationPending, startSourceMutationTransition] = useTransition();
+  const [isOpmlImportPending, startOpmlImportTransition] = useTransition();
 
   const [optimisticSources, setOptimisticSources] = useOptimistic(
     initialSources,
@@ -93,7 +160,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
 
     const url = newSourceUrl.trim();
 
-    startTransition(async () => {
+    startSourceMutationTransition(async () => {
       try {
         const result = await addSource(url);
         const feedback = getAddSourceFeedback(result);
@@ -121,7 +188,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
   };
 
   const handleToggleSource = (id: string, currentStatus: "active" | "paused" | "blocked") => {
-    startTransition(async () => {
+    startSourceMutationTransition(async () => {
       try {
         setOptimisticSources({ type: "toggle", id, status: currentStatus });
         await toggleSourceStatus(id, currentStatus);
@@ -135,7 +202,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
   };
 
   const handleRemoveSource = (id: string) => {
-    startTransition(async () => {
+    startSourceMutationTransition(async () => {
       try {
         setOptimisticSources({ type: "remove", id });
         const result = await removeSource(id);
@@ -153,27 +220,217 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
     });
   };
 
+  const openOpmlFilePicker = () => {
+    opmlFileInputRef.current?.click();
+  };
+
+  const clearSelectedOpmlFile = () => {
+    setSelectedOpmlFile(null);
+
+    if (opmlFileInputRef.current) {
+      opmlFileInputRef.current.value = "";
+    }
+  };
+
+  const setOpmlFile = (file: File | null) => {
+    setSelectedOpmlFile(file);
+  };
+
+  const handleOpmlFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    setOpmlFile(input.files?.[0] ?? null);
+  };
+
+  const handleOpmlDrop = (event: DragEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setIsOpmlDragActive(false);
+    setOpmlFile(event.dataTransfer.files?.[0] ?? null);
+  };
+
+  const handleImportOpml = async () => {
+    if (!selectedOpmlFile) {
+      toast.error("请选择 OPML 文件。");
+      return;
+    }
+
+    let opmlContent: string;
+
+    try {
+      opmlContent = await selectedOpmlFile.text();
+    } catch (error) {
+      console.error("Failed to read OPML file", error);
+      toast.error("读取 OPML 文件失败。");
+      return;
+    }
+
+    if (!opmlContent.trim()) {
+      toast.error("OPML 文件内容为空。");
+      return;
+    }
+
+    startOpmlImportTransition(async () => {
+      try {
+        const result = await importSourcesFromOpml(opmlContent);
+        const feedback = getOpmlImportFeedback(result);
+        setOpmlImportResult(getNextOpmlImportResult(result));
+
+        if (feedback.shouldClearFile) {
+          clearSelectedOpmlFile();
+        }
+
+        if (feedback.shouldRefresh) {
+          router.refresh();
+        }
+
+        if (feedback.tone === "success") {
+          toast.success(feedback.message);
+          return;
+        }
+
+        toast.error(feedback.message);
+      } catch (error) {
+        console.error("Failed to import OPML", error);
+        toast.error("OPML 导入失败。");
+      }
+    });
+  };
+
+  const importSummaryCards = opmlImportResult
+    ? [
+        { label: "总计", value: opmlImportResult.totalCount },
+        { label: "已新增", value: opmlImportResult.createdCount },
+        { label: "已存在", value: opmlImportResult.skippedCount },
+        { label: "失败", value: opmlImportResult.failedCount },
+      ]
+    : [];
+
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-2">
       <Card className="border-border">
         <CardHeader>
-          <CardTitle>Add New Source</CardTitle>
-          <CardDescription>Connect a new RSS feed to your intelligence network.</CardDescription>
+          <CardTitle>Manage Sources</CardTitle>
+          <CardDescription>添加单个 RSS，或通过 OPML 批量导入现有订阅清单。</CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleAddSource} className="flex flex-col sm:flex-row gap-4">
-            <Input
-              placeholder="RSS Feed URL"
-              value={newSourceUrl}
-              type="url"
-              onChange={(event) => setNewSourceUrl(event.target.value)}
-              className="flex-1"
-              required
-            />
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Adding..." : "Add Source"}
-            </Button>
-          </form>
+        <CardContent className="space-y-6">
+          <Tabs defaultValue="single" className="gap-4">
+            <TabsList>
+              <TabsTrigger value="single">单条 RSS</TabsTrigger>
+              <TabsTrigger value="opml">OPML 导入</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="single" className="pt-1">
+              <form onSubmit={handleAddSource} className="flex flex-col gap-4 sm:flex-row">
+                <Input
+                  placeholder="RSS Feed URL"
+                  value={newSourceUrl}
+                  type="url"
+                  onChange={(event) => setNewSourceUrl(event.target.value)}
+                  className="flex-1"
+                  required
+                />
+                <Button type="submit" disabled={isSourceMutationPending}>
+                  {isSourceMutationPending ? "Adding..." : "Add Source"}
+                </Button>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="opml" className="space-y-4 pt-1">
+              <input
+                ref={opmlFileInputRef}
+                type="file"
+                accept=".opml,.xml,text/xml,application/xml"
+                className="hidden"
+                onChange={handleOpmlFileChange}
+              />
+
+              <button
+                type="button"
+                onClick={openOpmlFilePicker}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setIsOpmlDragActive(true);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsOpmlDragActive(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  setIsOpmlDragActive(false);
+                }}
+                onDrop={handleOpmlDrop}
+                className={
+                  isOpmlDragActive
+                    ? "flex cursor-pointer flex-col items-center justify-center rounded-xl border border-primary/50 bg-primary/5 px-6 py-10 text-center transition"
+                    : "flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/10 px-6 py-10 text-center transition hover:border-primary/40 hover:bg-primary/5"
+                }
+              >
+                <div className="mb-4 flex size-11 items-center justify-center rounded-full bg-muted text-foreground">
+                  <FileUp size={18} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    {selectedOpmlFile ? selectedOpmlFile.name : "拖拽 OPML 文件到这里，或点击选择文件"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedOpmlFile
+                      ? "文件已就绪，可以直接导入，或重新选择其他文件。"
+                      : "支持 .opml 与 .xml 文件，导入后会显示本次结果摘要。"}
+                  </p>
+                </div>
+              </button>
+
+              <div className="flex flex-wrap gap-3">
+                <Button type="button" variant="outline" onClick={openOpmlFilePicker} disabled={isOpmlImportPending}>
+                  {selectedOpmlFile ? "更换文件" : "选择文件"}
+                </Button>
+                {selectedOpmlFile ? (
+                  <Button type="button" variant="ghost" onClick={clearSelectedOpmlFile} disabled={isOpmlImportPending}>
+                    <X size={14} />
+                    清空
+                  </Button>
+                ) : null}
+                <Button type="button" onClick={handleImportOpml} disabled={isOpmlImportPending || !selectedOpmlFile}>
+                  {isOpmlImportPending ? "导入中..." : "开始导入"}
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          {opmlImportResult ? (
+            <div className="space-y-4 rounded-xl border border-border bg-muted/10 p-4">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">本次导入结果</div>
+                <div className="text-xs text-muted-foreground">导入运行 ID：{opmlImportResult.importRunId}</div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {importSummaryCards.map((item) => (
+                  <div key={item.label} className="rounded-lg border border-border bg-background/80 p-3">
+                    <div className="text-xs text-muted-foreground">{item.label}</div>
+                    <div className="mt-1 text-lg font-semibold">{item.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {opmlImportResult.failedItems.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">失败明细</div>
+                  <div className="space-y-2">
+                    {opmlImportResult.failedItems.map((item) => (
+                      <div
+                        key={`${item.inputUrl}-${item.errorMessage}`}
+                        className="rounded-lg border border-border bg-background/80 p-3"
+                      >
+                        <div className="truncate text-xs font-medium">{item.inputUrl}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{item.errorMessage}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -203,7 +460,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                        disabled={isPending}
+                        disabled={isSourceMutationPending}
                       >
                         <Trash2 size={16} />
                       </Button>
@@ -235,7 +492,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
                 variant="link"
                 className="p-0 h-auto text-xs text-primary font-semibold hover:underline"
                 onClick={() => handleToggleSource(source.id, source.status)}
-                disabled={isPending}
+                disabled={isSourceMutationPending}
               >
                 {source.status === "active" ? "Pause Sync" : "Resume Sync"}
               </Button>

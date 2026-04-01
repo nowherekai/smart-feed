@@ -23,6 +23,7 @@
 | [017](arch/017_worker-bull-board-monitor.md) | 2026-04-01 | Worker 独立端口 bull-board 队列监控 |
 | [018](arch/018_multi-worker-implementation-and-log-enhancement.md) | 2026-04-01 | 多 Worker 职能队列完整实现与日志增强 |
 | [019](arch/019_sources-page-rss-validation-and-auto-title.md) | 2026-04-01 | Sources 页面单条 RSS 导入校验与自动标题 |
+| [020](arch/020_sources-page-opml-import-entry-and-result-summary.md) | 2026-04-01 | Sources 页面 OPML 导入入口与结果摘要 |
 
 ## 运维变更
 
