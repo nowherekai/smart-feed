@@ -59,9 +59,12 @@ export function SourcesClient({ initialSources }: { initialSources: Source[] }) 
       };
       setOptimisticSources({ type: "add", source: newSource });
 
-      await addSource(newSourceUrl.trim(), newSourceTitle.trim());
+      const url = newSourceUrl.trim();
+      const title = newSourceTitle.trim();
       setNewSourceUrl("");
       setNewSourceTitle("");
+
+      await addSource(url, title);
     });
   };
 
