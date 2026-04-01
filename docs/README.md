@@ -22,6 +22,7 @@
 | [014](changes/arch/014_frontend-ui-architecture-setup.md) | 2026-04-01 | 前端 UI 架构与 Base UI 集成 |
 | [015](changes/arch/015_frontend-component-boundaries-and-streaming.md) | 2026-04-01 | 前端组件边界瘦身与流式渲染整理 |
 | [016](changes/arch/016_multi-worker-queue-routing-and-task-rename.md) | 2026-04-01 | 多 Worker 队列路由与任务命名收口 |
+| [017](changes/arch/017_worker-bull-board-monitor.md) | 2026-04-01 | Worker 独立端口 bull-board 队列监控 |
 
 ### 运维变更
 

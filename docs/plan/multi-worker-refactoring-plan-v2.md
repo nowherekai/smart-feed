@@ -467,9 +467,9 @@ const sources = await db.query.sources.findMany({
 
 bull-board 尚未在当前代码库中实现。在前 5 个 Phase 全部完成后添加：
 
-- 位置：在 Next.js 的 API Route 或独立 Express 路由中挂载
+- 位置：在 worker 进程中启动独立 Express 服务，不接入 Next.js app
 - 注册全部 5 个 Queue 实例（从 `getQueueRegistry()` 获取）
-- 按 spec 要求通过 `/bull-board` 路径访问
+- 按 spec 要求通过 `/admin/queues` 路径访问
 
 ```typescript
 import { createBullBoard } from "@bull-board/api";
