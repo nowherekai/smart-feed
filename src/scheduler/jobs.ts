@@ -104,7 +104,5 @@ export async function registerSchedulerJobs(
 export async function removeSchedulerJobs(registry: QueueRegistry): Promise<void> {
   const definitions = buildSchedulerJobDefinitions(getAppEnv());
 
-  await Promise.all(
-    definitions.map((definition) => registry[definition.queueName].removeJobScheduler(definition.id)),
-  );
+  await Promise.all(definitions.map((definition) => registry[definition.queueName].removeJobScheduler(definition.id)));
 }
