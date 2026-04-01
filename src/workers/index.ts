@@ -17,6 +17,7 @@ import {
   smartFeedTaskNames,
 } from "../queue";
 import { startScheduler, stopScheduler } from "../scheduler";
+import { startWorkerBullBoard, type WorkerBullBoardServer } from "./bull-board";
 
 /** Worker 应用实例类型子集 */
 type AppWorker = Pick<Worker<PipelineJobData, PipelineJobResult, SmartFeedTaskName>, "close" | "on">;
@@ -44,12 +45,14 @@ export type WorkerAppDeps = {
   exit?: (code: number) => never | undefined;
   logger?: LoggerLike;
   process?: ProcessLike;
+  startBullBoard?: () => Promise<WorkerBullBoardServer>;
   startScheduler?: () => Promise<void>;
   stopScheduler?: () => Promise<void>;
 };
 
 /** 启动后的应用对象 */
 export type WorkerApp = {
+  bullBoard: WorkerBullBoardServer | null;
   shutdown: (signal: string) => Promise<void>;
   workers: AppWorker[];
 };
@@ -80,6 +83,7 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
   const exit = deps.exit ?? ((code: number) => process.exit(code));
   const createAppWorker = deps.createWorker ?? createWorker;
   const closeLegacyQueue = deps.closeLegacyImportQueue ?? closeLegacyImportQueue;
+  const startBullBoard = deps.startBullBoard ?? startWorkerBullBoard;
   const startAppScheduler = deps.startScheduler ?? startScheduler;
   const stopAppScheduler = deps.stopScheduler ?? stopScheduler;
   const closeRedis = deps.closeRedisConnection ?? closeRedisConnection;
@@ -114,6 +118,7 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
     ),
     createAppWorker(legacyImportQueueName, makeProcessor(new Set([smartFeedTaskNames.sourceImport]))),
   ];
+  let bullBoard: WorkerBullBoardServer | null = null;
 
   for (const worker of workers) {
     worker.on("ready", () => {
@@ -125,14 +130,24 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
     });
   }
 
-  // 启动调度器（注册定时任务）
-  await startAppScheduler();
+  try {
+    // 启动调度器（注册定时任务）
+    await startAppScheduler();
+    bullBoard = await startBullBoard();
+  } catch (error) {
+    await Promise.allSettled(workers.map((worker) => worker.close()));
+    await stopAppScheduler().catch(() => undefined);
+    await closeLegacyQueue().catch(() => undefined);
+    await closeRedis().catch(() => undefined);
+    throw error;
+  }
 
   /**
    * 优雅停机逻辑
    */
   const shutdown = async (signal: string) => {
     logger.info(`[worker] Received ${signal}, shutting down...`);
+    await bullBoard?.close();
     await Promise.all(workers.map((worker) => worker.close()));
     await stopAppScheduler();
     await closeLegacyQueue();
@@ -150,6 +165,7 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
   });
 
   return {
+    bullBoard,
     shutdown,
     workers,
   };
