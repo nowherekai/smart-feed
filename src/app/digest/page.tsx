@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DigestItem } from "@/components/features/digest-item";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,18 +10,16 @@ import { useFeedStore } from "@/lib/store";
 export default function DailyDigestPage() {
   const analysisRecords = useFeedStore((state) => state.analysisRecords);
 
-  // Group by category assuming the first category is primary
-  const getCategories = () => {
-    const categories = new Set<string>();
+  const groupedCategories = React.useMemo(() => {
+    const map = new Map<string, typeof analysisRecords>();
     for (const r of analysisRecords) {
       for (const c of r.category) {
-        categories.add(c);
+        if (!map.has(c)) map.set(c, []);
+        map.get(c)!.push(r);
       }
     }
-    return Array.from(categories);
-  };
-
-  const categories = getCategories();
+    return Array.from(map.entries()).map(([category, items]) => ({ category, items }));
+  }, [analysisRecords]);
 
   return (
     <ScrollArea className="flex-1 w-full h-full">
@@ -45,8 +44,7 @@ export default function DailyDigestPage() {
           </div>
 
           <div className="space-y-16">
-            {categories.map((category) => {
-              const items = analysisRecords.filter((r) => r.category.includes(category));
+            {groupedCategories.map(({ category, items }) => {
               if (items.length === 0) return null;
 
               return (
@@ -64,7 +62,7 @@ export default function DailyDigestPage() {
               );
             })}
 
-            {categories.length === 0 && (
+            {groupedCategories.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
                 No digest generated yet. Wait for the scheduled task or trigger manually.
               </div>
