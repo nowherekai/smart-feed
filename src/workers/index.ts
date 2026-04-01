@@ -1,22 +1,32 @@
+/**
+ * Worker 进程入口模块
+ * 负责启动 BullMQ Worker、定时调度器，并处理进程的优雅停机（Graceful Shutdown）。
+ */
+
 import type { Job, Worker } from "bullmq";
 
 import { type PipelineJobData, type PipelineJobResult, pipelineHandlers } from "../pipeline";
 import { closeRedisConnection, createWorker, type JobName } from "../queue";
 import { startScheduler, stopScheduler } from "../scheduler";
 
+/** Worker 应用实例类型子集 */
 type AppWorker = Pick<Worker<PipelineJobData, PipelineJobResult, JobName>, "close" | "on">;
 
+/** Worker 创建工厂函数类型 */
 type WorkerFactory = (
   processor: (job: Job<PipelineJobData, PipelineJobResult, JobName>) => Promise<PipelineJobResult>,
 ) => AppWorker;
 
+/** 进程接口子集，方便测试注入 */
 type ProcessLike = {
   exit: (code: number) => never | undefined;
   once: (event: "SIGINT" | "SIGTERM", listener: () => void) => void;
 };
 
+/** 日志接口子集 */
 type LoggerLike = Pick<typeof console, "error" | "info">;
 
+/** 应用启动依赖项 */
 export type WorkerAppDeps = {
   closeRedisConnection?: () => Promise<void>;
   createWorker?: WorkerFactory;
@@ -27,11 +37,15 @@ export type WorkerAppDeps = {
   stopScheduler?: () => Promise<void>;
 };
 
+/** 启动后的应用对象 */
 export type WorkerApp = {
   shutdown: (signal: string) => Promise<void>;
   worker: AppWorker;
 };
 
+/**
+ * 根据 Job 名称查找对应的 Pipeline Handler
+ */
 function getHandler(jobName: string) {
   const handler = pipelineHandlers[jobName as JobName];
 
@@ -42,6 +56,13 @@ function getHandler(jobName: string) {
   return handler;
 }
 
+/**
+ * 启动 Worker 应用主逻辑
+ * 1. 初始化 Worker
+ * 2. 注册任务处理器 (Processor)
+ * 3. 启动定时调度器
+ * 4. 监听 SIGINT/SIGTERM 实现优雅停机
+ */
 export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerApp> {
   const logger = deps.logger ?? console;
   const processLike = deps.process ?? process;
@@ -53,6 +74,7 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
 
   logger.info("[worker] Starting smart-feed worker...");
 
+  // 创建 Worker 并定义处理器逻辑
   const worker = createAppWorker(
     async (job: Job<PipelineJobData, PipelineJobResult, JobName>): Promise<PipelineJobResult> => {
       const handler = getHandler(job.name);
@@ -68,8 +90,12 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
     logger.error(`[worker] Job ${job?.id ?? "unknown"} failed.`, error);
   });
 
+  // 启动调度器（注册定时任务）
   await startAppScheduler();
 
+  /**
+   * 优雅停机逻辑
+   */
   const shutdown = async (signal: string) => {
     logger.info(`[worker] Received ${signal}, shutting down...`);
     await worker.close();
@@ -78,6 +104,7 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
     exit(0);
   };
 
+  // 监听进程中断信号
   processLike.once("SIGINT", () => {
     void shutdown("SIGINT");
   });
@@ -92,10 +119,14 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
   };
 }
 
+/**
+ * 主入口函数
+ */
 async function main() {
   await startWorkerApp();
 }
 
+// 仅在直接运行时执行 (Bun 兼容方式)
 if (import.meta.main) {
   void main().catch(async (error) => {
     console.error("[worker] Failed to start worker.", error);

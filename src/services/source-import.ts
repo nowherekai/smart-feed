@@ -1,3 +1,9 @@
+/**
+ * 来源导入服务模块
+ * 负责执行单个 RSS URL 导入或批量 OPML 文件导入的任务逻辑。
+ * 包含：创建导入运行记录、URL 验证、去重检查、来源创建以及触发首次抓取任务。
+ */
+
 import { eq } from "drizzle-orm";
 import { getDb, sourceImportRunItems, sourceImportRuns } from "../db";
 import { type ParsedOpmlSource, parseOpml } from "../parsers";
@@ -21,6 +27,7 @@ type SourceReference = Pick<SourceRecord, "id">;
 type SourceImportRunReference = Pick<SourceImportRunRecord, "id">;
 type SourceImportRunItemReference = Pick<SourceImportRunItemRecord, "id">;
 
+/** 来源导入任务输入数据 */
 export type SourceImportJobData =
   | {
       mode: "single";
@@ -31,14 +38,21 @@ export type SourceImportJobData =
       opml: string;
     };
 
+/** 单个条目的导入执行结果 */
 export type SourceImportItemOutcome = {
+  /** 原始输入的 URL */
   inputUrl: string;
+  /** 规范化后的有效 URL */
   normalizedUrl: string | null;
+  /** 结果类型：已创建、因重复跳过、失败 */
   result: "created" | "skipped_duplicate" | "failed";
+  /** 若导入成功，关联的 sourceId */
   sourceId: string | null;
+  /** 失败时的错误消息 */
   errorMessage: string | null;
 };
 
+/** 导入运行汇总统计 */
 export type SourceImportSummary = {
   importRunId: string;
   mode: "single" | "opml";
@@ -50,6 +64,7 @@ export type SourceImportSummary = {
   items: SourceImportItemOutcome[];
 };
 
+/** 依赖项接口，支持 Mock */
 export type SourceImportDeps = {
   createImportRun?: (data: NewSourceImportRun) => Promise<SourceImportRunReference>;
   updateImportRun?: (id: string, data: SourceImportRunUpdate) => Promise<void>;
@@ -61,6 +76,7 @@ export type SourceImportDeps = {
   enqueueSourceFetch?: (data: SourceFetchJobData) => Promise<void>;
 };
 
+/** 辅助函数：确保行插入成功 */
 function requireInsertedRow<T>(row: T | undefined, entityName: string): T {
   if (!row) {
     throw new Error(`[services/source-import] Failed to insert ${entityName}.`);
@@ -69,6 +85,7 @@ function requireInsertedRow<T>(row: T | undefined, entityName: string): T {
   return row;
 }
 
+/** 创建导入运行总记录 */
 async function createImportRun(data: NewSourceImportRun): Promise<SourceImportRunRecord> {
   const db = getDb();
   const [run] = await db.insert(sourceImportRuns).values(data).returning();
@@ -76,6 +93,7 @@ async function createImportRun(data: NewSourceImportRun): Promise<SourceImportRu
   return requireInsertedRow(run, "source import run");
 }
 
+/** 更新导入运行总记录（如统计数量、状态、完成时间） */
 async function updateImportRun(id: string, data: SourceImportRunUpdate): Promise<void> {
   if (Object.keys(data).length === 0) {
     return;
@@ -85,6 +103,7 @@ async function updateImportRun(id: string, data: SourceImportRunUpdate): Promise
   await db.update(sourceImportRuns).set(data).where(eq(sourceImportRuns.id, id));
 }
 
+/** 创建单条明细记录 */
 async function createImportRunItem(data: NewSourceImportRunItem): Promise<SourceImportRunItemRecord> {
   const db = getDb();
   const [item] = await db.insert(sourceImportRunItems).values(data).returning();
@@ -92,6 +111,7 @@ async function createImportRunItem(data: NewSourceImportRunItem): Promise<Source
   return requireInsertedRow(item, "source import run item");
 }
 
+/** 为新导入成功的来源入队首次抓取任务 */
 async function enqueueSourceFetch(data: SourceFetchJobData): Promise<void> {
   const queue = createQueue<SourceFetchJobData>();
   await queue.add(jobNames.sourceFetch, data, {
@@ -101,6 +121,7 @@ async function enqueueSourceFetch(data: SourceFetchJobData): Promise<void> {
   });
 }
 
+/** 格式化错误消息 */
 function toFailureMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -109,6 +130,7 @@ function toFailureMessage(error: unknown): string {
   return "Unknown import error.";
 }
 
+/** 汇总执行结果统计 */
 function summarizeOutcomes(outcomes: SourceImportItemOutcome[]) {
   return outcomes.reduce(
     (summary, outcome) => {
@@ -130,6 +152,12 @@ function summarizeOutcomes(outcomes: SourceImportItemOutcome[]) {
   );
 }
 
+/**
+ * 处理单条 URL 导入的业务逻辑
+ * 1. 验证 RSS URL。
+ * 2. 检查数据库是否已存在该标识符。
+ * 3. 若不存在，创建 source 并入队 fetch 任务。
+ */
 async function processSingleUrl(
   importRunId: string,
   inputUrl: string,
@@ -159,6 +187,7 @@ async function processSingleUrl(
       firstImportedAt: new Date(),
     });
 
+    // 成功创建后，立即触发首次抓取
     await deps.enqueueSourceFetch({
       sourceId: createdSource.id,
       importRunId,
@@ -189,6 +218,7 @@ async function processSingleUrl(
   }
 }
 
+/** 持久化单条明细结果 */
 async function persistOutcome(
   importRunId: string,
   outcome: SourceImportItemOutcome,
@@ -204,6 +234,7 @@ async function persistOutcome(
   });
 }
 
+/** 注入默认依赖 */
 function buildDeps(overrides: SourceImportDeps): Required<SourceImportDeps> {
   return {
     createImportRun: overrides.createImportRun ?? createImportRun,
@@ -217,6 +248,7 @@ function buildDeps(overrides: SourceImportDeps): Required<SourceImportDeps> {
   };
 }
 
+/** 完成并归档运行记录 */
 async function finalizeRun(
   runId: string,
   outcomes: SourceImportItemOutcome[],
@@ -239,6 +271,10 @@ async function finalizeRun(
   };
 }
 
+/**
+ * 核心导入业务入口
+ * 支持 single (单条 URL) 和 opml (批量文件) 模式。
+ */
 export async function runSourceImport(
   input: SourceImportJobData,
   overrides: SourceImportDeps = {},
@@ -246,6 +282,7 @@ export async function runSourceImport(
   const deps = buildDeps(overrides);
   const startedAt = new Date();
 
+  // 模式 1: 单条导入
   if (input.mode === "single") {
     const run = await deps.createImportRun({
       mode: "single",
@@ -267,6 +304,7 @@ export async function runSourceImport(
     };
   }
 
+  // 模式 2: OPML 批量导入
   const run = await deps.createImportRun({
     mode: "opml",
     totalCount: 0,
@@ -284,6 +322,7 @@ export async function runSourceImport(
 
     const outcomes: SourceImportItemOutcome[] = [];
 
+    // 串行执行每一条 URL 的导入
     for (const url of urls) {
       const outcome = await processSingleUrl(run.id, url, deps);
       outcomes.push(outcome);

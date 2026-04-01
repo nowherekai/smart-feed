@@ -1,9 +1,15 @@
+/**
+ * 信息源业务逻辑模块
+ * 负责信息源（Source）的验证、元数据提取、数据库查询及创建操作。
+ */
+
 import { and, eq } from "drizzle-orm";
 import { XMLParser } from "fast-xml-parser";
 
 import { getDb, sources } from "../db";
 import { normalizeUrl } from "../utils";
 
+/** 快速 XML 解析器配置，用于提取 Feed 元数据 */
 const feedParser = new XMLParser({
   attributeNamePrefix: "",
   ignoreAttributes: false,
@@ -11,10 +17,14 @@ const feedParser = new XMLParser({
   trimValues: true,
 });
 
+/** 抓取时使用的 User-Agent */
 const SMART_FEED_USER_AGENT = "smart-feed/1.0 (+https://github.com/nowherekai/smart-feed)";
 
+/** Feed 元数据子集 */
 type FeedMetadata = {
+  /** 频道标题 */
   title: string | null;
+  /** 站点主页链接 */
   siteUrl: string | null;
 };
 
@@ -23,18 +33,24 @@ type NewSource = typeof sources.$inferInsert;
 
 export type SourceType = (typeof sources.$inferInsert)["type"];
 
+/** 已验证并准备好的 RSS 来源信息 */
 export type PreparedRssSource = {
+  /** 规范化后的 RSS 地址 */
   normalizedUrl: string;
+  /** 来源标题 */
   title: string | null;
+  /** 站点主页链接 */
   siteUrl: string | null;
 };
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+/** 验证依赖项 */
 export type VerifyRssSourceDeps = {
   fetch?: FetchLike;
 };
 
+/** 辅助函数：规范化可选字符串 */
 function normalizeOptionalString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -44,6 +60,10 @@ function normalizeOptionalString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/**
+ * 从原始 XML 中提取 Feed 元数据 (标题、站点链接)
+ * 支持 RSS 2.0, Atom 1.0, 和 RDF/RSS 1.0
+ */
 function extractFeedMetadata(xml: string): FeedMetadata {
   const parsed = feedParser.parse(xml) as {
     rss?: { channel?: { title?: string; link?: string } };
@@ -54,6 +74,7 @@ function extractFeedMetadata(xml: string): FeedMetadata {
     "rdf:RDF"?: { channel?: { title?: string; link?: string } };
   };
 
+  // 处理 RSS 2.0 或 RDF 1.0
   const rssChannel = parsed.rss?.channel ?? parsed["rdf:RDF"]?.channel;
 
   if (rssChannel) {
@@ -63,6 +84,7 @@ function extractFeedMetadata(xml: string): FeedMetadata {
     };
   }
 
+  // 处理 Atom 1.0
   const atomFeed = parsed.feed;
 
   if (atomFeed) {
@@ -81,6 +103,9 @@ function extractFeedMetadata(xml: string): FeedMetadata {
   throw new Error("[services/source] Response is not a valid RSS or Atom feed.");
 }
 
+/**
+ * 校验并规范化 HTTP/HTTPS URL
+ */
 function assertHttpUrl(inputUrl: string): string {
   let parsedUrl: URL;
 
@@ -97,6 +122,13 @@ function assertHttpUrl(inputUrl: string): string {
   return normalizeUrl(parsedUrl.toString());
 }
 
+/**
+ * 核心验证函数：尝试抓取并解析 RSS 地址
+ * 1. 规范化 URL。
+ * 2. 尝试 Fetch 抓取。
+ * 3. 校验状态码。
+ * 4. 提取元数据。
+ */
 export async function verifyAndPrepareRssSource(
   inputUrl: string,
   deps: VerifyRssSourceDeps = {},
@@ -109,7 +141,7 @@ export async function verifyAndPrepareRssSource(
       accept: "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
     },
     redirect: "follow",
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(10_000), // 10秒超时
   });
 
   if (!response.ok) {
@@ -131,6 +163,9 @@ export async function verifyAndPrepareRssSource(
   };
 }
 
+/**
+ * 根据标识符 (URL) 和类型查找信息源
+ */
 export async function findSourceByIdentifier(
   identifier: string,
   type: SourceType = "rss-source",
@@ -152,6 +187,9 @@ function requireInsertedSource(source: SourceRecord | undefined): SourceRecord {
   return source;
 }
 
+/**
+ * 创建新的信息源记录
+ */
 export async function createSource(data: NewSource): Promise<SourceRecord> {
   const db = getDb();
   const [source] = await db.insert(sources).values(data).returning();
@@ -159,6 +197,9 @@ export async function createSource(data: NewSource): Promise<SourceRecord> {
   return requireInsertedSource(source);
 }
 
+/**
+ * 获取所有活跃信息源的 ID 列表
+ */
 export async function listActiveSourceIds(): Promise<string[]> {
   const db = getDb();
   const rows = await db

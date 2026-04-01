@@ -1,3 +1,9 @@
+/**
+ * 邮件发送服务模块
+ * 负责摘要报告的 HTML 渲染及通过 SMTP 协议进行投递。
+ * 包含：Markdown 转 HTML、内联 CSS 模板包裹、SMTP 客户端初始化及邮件发送。
+ */
+
 import { marked } from "marked";
 import nodemailer from "nodemailer";
 
@@ -30,6 +36,10 @@ type SendDigestEmailInput = EmailTransportConfig & {
   subject: string;
 };
 
+/**
+ * 基础 HTML 邮件包装模板
+ * 使用内联样式确保在不同邮件客户端中的显示效果。
+ */
 function wrapEmailHtml(contentHtml: string): string {
   return [
     "<!doctype html>",
@@ -48,6 +58,10 @@ function wrapEmailHtml(contentHtml: string): string {
   ].join("");
 }
 
+/**
+ * 渲染摘要邮件内容
+ * 将 Markdown 渲染为带样式的 HTML，同时保留纯文本版本作为备选。
+ */
 export async function renderDigestEmail(markdownBody: string): Promise<EmailContent> {
   const normalizedMarkdown = markdownBody.trim();
   const parsedHtml = await marked.parse(normalizedMarkdown);
@@ -58,6 +72,9 @@ export async function renderDigestEmail(markdownBody: string): Promise<EmailCont
   };
 }
 
+/**
+ * 底层邮件发送函数
+ */
 export async function sendEmail(input: SendEmailInput, overrides: SendEmailDeps = {}): Promise<{ messageId?: string }> {
   const createTransport = overrides.createTransport ?? nodemailer.createTransport;
   const transport = createTransport({
@@ -67,7 +84,7 @@ export async function sendEmail(input: SendEmailInput, overrides: SendEmailDeps 
     },
     host: input.host,
     port: input.port,
-    secure: input.port === 465,
+    secure: input.port === 465, // 465 端口默认启用 SSL
   });
   const info = await transport.sendMail({
     from: input.from,
@@ -82,6 +99,10 @@ export async function sendEmail(input: SendEmailInput, overrides: SendEmailDeps 
   };
 }
 
+/**
+ * 高层摘要邮件发送入口
+ * 接收 Markdown 正文，自动渲染并发送。
+ */
 export async function sendDigestEmail(
   input: SendDigestEmailInput,
   overrides: SendEmailDeps = {},

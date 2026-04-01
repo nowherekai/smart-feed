@@ -1,10 +1,18 @@
+/**
+ * 内容标准化转换服务模块
+ * 负责将原始 HTML 或纯文本转换为清洗后的标准 Markdown 格式。
+ * 包含：噪音节点移除（导航、广告、页脚）、正文根节点启发式识别、Markdown 格式化、标题补全及长度截断。
+ */
+
 import { DOMParser } from "linkedom";
 import TurndownService from "turndown";
 
 import type { RawContentFormat } from "./html-fetcher";
 
+/** 最终 Markdown 的最大字节数限制，防止 AI 处理成本过高 */
 const MAX_MARKDOWN_BYTES = 50 * 1024;
 
+/** 需要移除的常见噪音元素选择器 */
 const NOISE_SELECTORS = [
   "script",
   "style",
@@ -44,6 +52,7 @@ const NOISE_SELECTORS = [
   ".subscribe",
 ];
 
+/** 潜在的正文根节点选择器，按优先级排序 */
 const CONTENT_ROOT_SELECTORS = [
   "article",
   "main",
@@ -56,12 +65,14 @@ const CONTENT_ROOT_SELECTORS = [
   ".post__content",
 ];
 
+/** 初始化 Turndown 转换服务 */
 const turndownService = new TurndownService({
   bulletListMarker: "-",
   codeBlockStyle: "fenced",
   headingStyle: "atx",
 });
 
+/** 自定义规则：确保 figure 标签内的图片保留空行 */
 turndownService.addRule("figure-images", {
   filter(node) {
     return node.nodeName === "FIGURE";
@@ -83,6 +94,7 @@ export type NormalizeRawContentResult = {
   truncated: boolean;
 };
 
+// 内部类型定义
 type QueryableNode = {
   querySelectorAll(selector: string): Iterable<unknown>;
 };
@@ -109,6 +121,7 @@ function getTextLength(element: ContentElement): number {
   return element.textContent?.replace(/\s+/g, " ").trim().length ?? 0;
 }
 
+/** 移除选中的噪音节点 */
 function removeNoise(root: QueryableNode): void {
   for (const selector of NOISE_SELECTORS) {
     for (const node of root.querySelectorAll(selector) as Iterable<RemovableNode>) {
@@ -117,6 +130,12 @@ function removeNoise(root: QueryableNode): void {
   }
 }
 
+/**
+ * 启发式选择最佳正文根节点
+ * 1. 尝试匹配常见的正文容器选择器。
+ * 2. 在匹配到的容器中，选择纯文本内容最长的那个作为最终根节点。
+ * 3. 若无匹配，回退到 body 节点。
+ */
 function pickBestContentRoot(document: ParsedHtmlDocument): ContentElement {
   const candidates = CONTENT_ROOT_SELECTORS.flatMap((selector) => [
     ...(document.querySelectorAll(selector) as Iterable<ContentElement>),
@@ -141,6 +160,7 @@ function pickBestContentRoot(document: ParsedHtmlDocument): ContentElement {
   return bestCandidate ?? document.body;
 }
 
+/** 在正文头部补齐一级标题（若没有） */
 function prependTitle(markdown: string, title: string | null): string {
   if (!title) {
     return markdown;
@@ -161,6 +181,7 @@ function prependTitle(markdown: string, title: string | null): string {
   return `# ${trimmedTitle}\n\n${markdown}`;
 }
 
+/** 在尾部补齐原文链接 */
 function appendSourceLink(markdown: string, originalUrl: string): string {
   if (!originalUrl.trim()) {
     return markdown;
@@ -173,6 +194,7 @@ function appendSourceLink(markdown: string, originalUrl: string): string {
   return `${markdown}\n\nSource: ${originalUrl}`;
 }
 
+/** 格式清理：移除多余空行和行尾空格 */
 function cleanMarkdown(markdown: string): string {
   return normalizeWhitespace(markdown)
     .replace(/\n{3,}/g, "\n\n")
@@ -180,6 +202,10 @@ function cleanMarkdown(markdown: string): string {
     .trim();
 }
 
+/**
+ * 内容截断逻辑
+ * 优先按段落截断，确保 Markdown 字节大小在限制范围内。
+ */
 function truncateMarkdown(markdown: string): NormalizeRawContentResult {
   const encoder = new TextEncoder();
 
@@ -212,6 +238,7 @@ function truncateMarkdown(markdown: string): NormalizeRawContentResult {
     };
   }
 
+  // 极端情况：单段落也超长，则按字符截断
   let fallbackMarkdown = "";
 
   for (const character of markdown) {
@@ -230,22 +257,30 @@ function truncateMarkdown(markdown: string): NormalizeRawContentResult {
   };
 }
 
+/** 处理 HTML 格式内容 */
 function normalizeHtmlToMarkdown(input: NormalizeRawContentInput): string {
   const document = new DOMParser().parseFromString(input.rawBody, "text/html") as unknown as ParsedHtmlDocument;
+
+  // 1. 初步移除全局噪音
   removeNoise(document);
 
+  // 2. 识别正文根节点
   const contentRoot = pickBestContentRoot(document).cloneNode(true) as ContentElement;
 
   if (!contentRoot.innerHTML) {
     throw new Error("[services/normalizer] Failed to identify content root.");
   }
 
+  // 3. 对正文根节点再次深度清理
   removeNoise(contentRoot);
+
+  // 4. HTML 转 Markdown
   const markdown = turndownService.turndown(contentRoot.innerHTML);
 
   return appendSourceLink(prependTitle(markdown, input.title), input.originalUrl);
 }
 
+/** 处理纯文本内容 */
 function normalizePlainTextToMarkdown(input: NormalizeRawContentInput): string {
   const paragraphs = normalizeWhitespace(input.rawBody)
     .split(/\n\s*\n/)
@@ -256,6 +291,12 @@ function normalizePlainTextToMarkdown(input: NormalizeRawContentInput): string {
   return appendSourceLink(prependTitle(body, input.title), input.originalUrl);
 }
 
+/**
+ * 标准化入口函数 (Task 3)
+ * 1. 识别内容格式（HTML 或纯文本）。
+ * 2. 执行相应的清洗和转换流程。
+ * 3. 进行最终的格式美化和长度截断。
+ */
 export function normalizeRawContent(input: NormalizeRawContentInput): NormalizeRawContentResult {
   const rawBody = input.rawBody.trim();
 

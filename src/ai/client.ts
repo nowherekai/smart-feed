@@ -1,3 +1,9 @@
+/**
+ * AI 客户端适配层模块
+ * 负责与 AI 服务商（如 OpenRouter）进行结构化交互。
+ * 包含：AI SDK 初始化、任务配置解析、Dummy Provider 模拟、结构化输出校验及错误处理。
+ */
+
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import type { ZodType } from "zod";
@@ -6,13 +12,17 @@ import { type AppEnv, getAppEnv } from "../config";
 import { type AiPromptInput, type AiPromptVersion, type EnabledAiRuntimeState, getPromptDefinition } from "./prompts";
 import type { BasicAnalysis, HeavySummary } from "./schemas";
 
+/** AI 运行时状态联合类型 */
 type AiRuntimeState = "disabled" | EnabledAiRuntimeState;
+/** AI 任务种类 */
 type AiTaskKind = "basic" | "heavy";
+/** AI 客户端所需的配置子集 */
 type AiClientEnv = Pick<
   AppEnv,
   "aiBasicModel" | "aiHeavyModel" | "aiProvider" | "openRouterApiKey" | "openRouterBaseUrl"
 >;
 
+/** 结构化对象生成函数类型 */
 type GenerateStructuredObject = <TOutput>(input: {
   model: unknown;
   prompt: string;
@@ -22,15 +32,22 @@ type GenerateStructuredObject = <TOutput>(input: {
   system: string;
 }) => Promise<{ object: TOutput }>;
 
+/** OpenRouter 服务商工厂函数类型 */
 type OpenRouterProviderFactory = (config: { apiKey: string; baseURL: string; name: "openrouter" }) => {
   chat: (modelId: string) => unknown;
 };
 
+/** 解析后的 AI 任务配置结构 */
 type ResolvedAiTaskConfig = {
+  /** AI API 基础地址 */
   baseURL: string | null;
+  /** 具体使用的模型 ID (如 gpt-4o-mini) */
   modelId: string | null;
+  /** 模型策略名称，用于持久化去重判断 */
   modelStrategy: string | null;
+  /** 使用的 Prompt 版本 */
   promptVersion: AiPromptVersion;
+  /** 当前运行时状态 */
   runtimeState: AiRuntimeState;
 };
 
@@ -40,6 +57,7 @@ type AiClientDeps = {
   openRouterProviderFactory?: OpenRouterProviderFactory;
 };
 
+/** 结构化 Prompt 定义结构 */
 type StructuredPromptDefinition<TOutput> = {
   buildMessages: (input: AiPromptInput) => {
     prompt: string;
@@ -50,6 +68,9 @@ type StructuredPromptDefinition<TOutput> = {
   schemaName: string;
 };
 
+// --- 错误定义 ---
+
+/** AI 提供商未配置错误 */
 class AiProviderUnavailableError extends Error {
   readonly code = "AI_PROVIDER_UNAVAILABLE";
 
@@ -61,6 +82,7 @@ class AiProviderUnavailableError extends Error {
   }
 }
 
+/** AI 配置无效错误（如缺少模型 ID） */
 class AiConfigurationError extends Error {
   readonly code = "AI_CONFIGURATION_INVALID";
 
@@ -70,6 +92,9 @@ class AiConfigurationError extends Error {
   }
 }
 
+// --- 默认实现 ---
+
+/** 使用 Vercel AI SDK 的 generateObject 实现结构化输出 */
 const defaultGenerateStructuredObject: GenerateStructuredObject = async ({
   model,
   prompt,
@@ -92,9 +117,13 @@ const defaultGenerateStructuredObject: GenerateStructuredObject = async ({
   };
 };
 
+/** 默认的 OpenRouter 兼容层实现 */
 const defaultOpenRouterProviderFactory: OpenRouterProviderFactory = (config) =>
   createOpenAI(config) as unknown as ReturnType<OpenRouterProviderFactory>;
 
+// --- Dummy Provider 辅助逻辑 (启发式模拟 AI) ---
+
+/** 提取文本片段用于 Dummy 输出 */
 function collectCandidatePhrases(input: AiPromptInput): string[] {
   const normalized = `${input.title}\n${input.cleanedMd}`
     .replace(/[#>*_`~-]+/g, " ")
@@ -118,10 +147,12 @@ function truncateText(value: string, maxLength: number): string {
   return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
 }
 
+/** 启发式：推断语种 */
 function inferLanguage(text: string): BasicAnalysis["language"] {
   return /[\u4e00-\u9fff]/u.test(text) ? "zh" : "en";
 }
 
+/** 启发式：推断分类 */
 function inferCategories(text: string): BasicAnalysis["categories"] {
   const categories = new Set<string>();
   const normalized = text.toLowerCase();
@@ -149,6 +180,7 @@ function inferCategories(text: string): BasicAnalysis["categories"] {
   return Array.from(categories).slice(0, 4);
 }
 
+/** 启发式：推断关键词 */
 function inferKeywords(text: string): string[] {
   const englishTokens = Array.from(text.toLowerCase().matchAll(/\b[a-z][a-z0-9-]{3,}\b/g), (match) => match[0]);
   const chineseTokens = Array.from(text.matchAll(/[\u4e00-\u9fff]{2,6}/gu), (match) => match[0]);
@@ -159,6 +191,7 @@ function inferKeywords(text: string): string[] {
   return keywords.slice(0, 8);
 }
 
+/** 启发式：推断实体 */
 function inferEntities(input: AiPromptInput): string[] {
   const entities = new Set<string>([input.sourceName]);
 
@@ -169,6 +202,7 @@ function inferEntities(input: AiPromptInput): string[] {
   return Array.from(entities).slice(0, 6);
 }
 
+/** 启发式：推断情感 */
 function inferSentiment(text: string): BasicAnalysis["sentiment"] {
   const positivePattern = /improve|growth|突破|增长|提升|机会/u;
   const negativePattern = /risk|issue|fail|warning|下降|风险|故障/u;
@@ -190,6 +224,7 @@ function inferSentiment(text: string): BasicAnalysis["sentiment"] {
   return "neutral";
 }
 
+/** 启发式：推断价值分 */
 function inferValueScore(text: string, categories: string[]): number {
   let score = 4;
   const contentLength = text.trim().length;
@@ -213,6 +248,7 @@ function inferValueScore(text: string, categories: string[]): number {
   return Math.max(0, Math.min(10, score));
 }
 
+/** 构建 Dummy 模式下的基础分析结果 */
 function buildDummyBasicAnalysis(input: AiPromptInput): BasicAnalysis {
   const combinedText = `${input.title}\n${input.cleanedMd}`;
   const categories = inferCategories(combinedText);
@@ -229,6 +265,7 @@ function buildDummyBasicAnalysis(input: AiPromptInput): BasicAnalysis {
   };
 }
 
+/** 构建 Dummy 模式下的深度摘要结果 */
 function buildDummyHeavySummary(input: AiPromptInput): HeavySummary {
   const phrases = collectCandidatePhrases(input);
   const evidenceSnippet = truncateText(phrases[0] ?? input.title, 180);
@@ -243,6 +280,8 @@ function buildDummyHeavySummary(input: AiPromptInput): HeavySummary {
     reason: `Dummy provider 认为这篇内容的价值分约为 ${valueScore}/10，适合后续由真实模型接管验证。`,
   };
 }
+
+// --- 配置解析逻辑 ---
 
 function resolveModelId(kind: AiTaskKind, env: AiClientEnv): string {
   const modelId = kind === "basic" ? env.aiBasicModel : env.aiHeavyModel;
@@ -267,6 +306,9 @@ function getRuntimeStateFromEnv(env: AiClientEnv): AiRuntimeState {
   return env.aiProvider ?? "disabled";
 }
 
+/**
+ * 将环境变量和任务类型解析为最终的 AI 任务配置
+ */
 function resolveTaskConfig(kind: AiTaskKind, env: AiClientEnv): ResolvedAiTaskConfig {
   const promptDefinition =
     kind === "basic" ? getPromptDefinition("basic-analysis-v1") : getPromptDefinition("heavy-summary-v1");
@@ -274,13 +316,7 @@ function resolveTaskConfig(kind: AiTaskKind, env: AiClientEnv): ResolvedAiTaskCo
   const runtimeState = getRuntimeStateFromEnv(env);
 
   if (runtimeState === "disabled") {
-    return {
-      baseURL: null,
-      modelId: null,
-      modelStrategy: null,
-      promptVersion,
-      runtimeState,
-    };
+    return { baseURL: null, modelId: null, modelStrategy: null, promptVersion, runtimeState };
   }
 
   if (runtimeState === "dummy") {
@@ -293,6 +329,7 @@ function resolveTaskConfig(kind: AiTaskKind, env: AiClientEnv): ResolvedAiTaskCo
     };
   }
 
+  // 校验 API Key
   resolveOpenRouterApiKey(env);
 
   return {
@@ -304,6 +341,9 @@ function resolveTaskConfig(kind: AiTaskKind, env: AiClientEnv): ResolvedAiTaskCo
   };
 }
 
+/**
+ * AI 客户端工厂
+ */
 function createAiClient(deps: AiClientDeps = {}) {
   const env = deps.env ?? getAppEnv();
   const generateStructuredObject = deps.generateStructuredObject ?? defaultGenerateStructuredObject;
@@ -334,6 +374,7 @@ function createAiClient(deps: AiClientDeps = {}) {
     return cachedOpenRouterProvider;
   }
 
+  /** 通用的结构化 Prompt 运行流程 */
   async function runStructuredPrompt<TOutput>(options: {
     buildDummyOutput: (input: AiPromptInput) => TOutput;
     input: AiPromptInput;
@@ -343,10 +384,12 @@ function createAiClient(deps: AiClientDeps = {}) {
     const { buildDummyOutput, input, kind, promptDefinition } = options;
     const runtimeState = assertAiAvailable();
 
+    // 如果是 Dummy 模式，直接基于规则生成假数据并校验
     if (runtimeState === "dummy") {
       return promptDefinition.schema.parse(buildDummyOutput(input));
     }
 
+    // 否则调用真实 AI 模型
     const provider = getOpenRouterProvider();
     const messages = promptDefinition.buildMessages(input);
     const result = await generateStructuredObject({
@@ -367,6 +410,7 @@ function createAiClient(deps: AiClientDeps = {}) {
     resolveAiTaskConfig(kind: AiTaskKind): ResolvedAiTaskConfig {
       return resolveTaskConfig(kind, env);
     },
+    /** 执行基础分析 */
     async runBasicAnalysis(input: AiPromptInput): Promise<BasicAnalysis> {
       return runStructuredPrompt({
         buildDummyOutput: buildDummyBasicAnalysis,
@@ -375,6 +419,7 @@ function createAiClient(deps: AiClientDeps = {}) {
         promptDefinition: getPromptDefinition("basic-analysis-v1"),
       });
     },
+    /** 执行深度摘要 */
     async runHeavySummary(input: AiPromptInput): Promise<HeavySummary> {
       return runStructuredPrompt({
         buildDummyOutput: buildDummyHeavySummary,
@@ -386,7 +431,10 @@ function createAiClient(deps: AiClientDeps = {}) {
   };
 }
 
+/** 导出的单例客户端 */
 const aiClient = createAiClient();
+
+// --- 封装导出函数 ---
 
 function getAiRuntimeState(): AiRuntimeState {
   return aiClient.getAiRuntimeState();

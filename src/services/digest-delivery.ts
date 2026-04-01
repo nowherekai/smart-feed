@@ -1,3 +1,9 @@
+/**
+ * 摘要投递服务模块
+ * 负责执行摘要报告的邮件发送逻辑。
+ * 包含：报告状态检查、邮件配置校验、调用邮件服务发送、以及更新报告投递状态。
+ */
+
 import { eq } from "drizzle-orm";
 
 import { type AppEnv, getAppEnv } from "../config";
@@ -15,16 +21,25 @@ type EmailDeliveryEnv = Pick<
   "emailDeliveryEnabled" | "smtpFrom" | "smtpHost" | "smtpPass" | "smtpPort" | "smtpTo" | "smtpUser"
 >;
 
+/** 摘要投递业务载荷 */
 export type DigestDeliverPayload = {
+  /** 报告日期 */
   digestDate: string | null;
+  /** 报告 ID */
   digestId: string;
+  /** 邮件主题 */
   emailSubject: string | null;
+  /** 收件人地址 */
   recipient: string | null;
+  /** 发送时间 (ISO) */
   sentAt: string | null;
+  /** 是否因已发送而跳过 */
   skippedAlreadySent: boolean;
+  /** 是否因功能关闭而跳过 */
   skippedDeliveryDisabled: boolean;
 };
 
+/** 投递依赖项 */
 export type DigestDeliverDeps = {
   getAppEnv?: () => Readonly<EmailDeliveryEnv>;
   getDigestReportById?: (digestId: string) => Promise<DigestReportRecord | null>;
@@ -32,6 +47,8 @@ export type DigestDeliverDeps = {
   sendDigestEmail?: typeof sendDigestEmail;
   updateDigestReport?: (digestId: string, data: DigestReportUpdate) => Promise<void>;
 };
+
+// --- 辅助函数 ---
 
 function buildPayload(input: {
   digestDate: string | null;
@@ -61,6 +78,7 @@ function toErrorMessage(error: unknown): string {
   return "Unknown digest delivery error.";
 }
 
+/** 提取并校验 SMTP 传输配置 */
 function getRequiredEmailTransportConfig(appEnv: Readonly<EmailDeliveryEnv>): EmailTransportConfig {
   if (
     !appEnv.smtpFrom ||
@@ -82,6 +100,8 @@ function getRequiredEmailTransportConfig(appEnv: Readonly<EmailDeliveryEnv>): Em
     user: appEnv.smtpUser,
   };
 }
+
+// --- 数据库操作 ---
 
 async function getDigestReportById(digestId: string): Promise<DigestReportRecord | null> {
   const db = getDb();
@@ -109,6 +129,15 @@ function buildDeps(overrides: DigestDeliverDeps): Required<DigestDeliverDeps> {
   };
 }
 
+/**
+ * 投递任务核心逻辑 (Task 7)
+ * 1. 查找报告：根据 digestId 获取报告元数据。
+ * 2. 状态预检：若报告已发送，则幂等跳过。
+ * 3. 环境校验：若环境变量未开启邮件发送，则记录状态并跳过。
+ * 4. 内容校验：确保 Markdown 正文非空。
+ * 5. 执行发送：调用底层 SMTP 服务发送邮件。
+ * 6. 更新状态：成功后更新 sent_at 和 status="sent"。
+ */
 export async function runDigestDeliver(
   jobData: DigestDeliverJobData,
   overrides: DigestDeliverDeps = {},
@@ -116,6 +145,7 @@ export async function runDigestDeliver(
   const deps = buildDeps(overrides);
   const report = await deps.getDigestReportById(jobData.digestId);
 
+  // 1. 基础校验
   if (!report) {
     return createFailedStepResult({
       message: `[services/digest-delivery] Digest "${jobData.digestId}" not found.`,
@@ -133,6 +163,7 @@ export async function runDigestDeliver(
 
   const emailSubject = report.emailSubject?.trim() ? report.emailSubject : getEmailSubject(report.digestDate);
 
+  // 2. 幂等检查
   if (report.status === "sent" || report.sentAt) {
     return createCompletedStepResult({
       message: `digest.deliver skipped because ${report.id} is already sent`,
@@ -150,15 +181,12 @@ export async function runDigestDeliver(
 
   let appEnv: Readonly<EmailDeliveryEnv>;
 
+  // 3. 配置加载与开关判定
   try {
     appEnv = deps.getAppEnv();
   } catch (error) {
     const message = toErrorMessage(error);
-
-    await deps.updateDigestReport(report.id, {
-      sentAt: null,
-      status: "failed",
-    });
+    await deps.updateDigestReport(report.id, { sentAt: null, status: "failed" });
     logger.error("digest delivery failed to load email configuration", {
       digestId: report.id,
       error: message,
@@ -187,13 +215,10 @@ export async function runDigestDeliver(
     });
   }
 
+  // 4. 内容完整性校验
   if (!report.markdownBody?.trim()) {
     const error = new Error(`[services/digest-delivery] Digest "${report.id}" has empty markdown body.`);
-
-    await deps.updateDigestReport(report.id, {
-      sentAt: null,
-      status: "failed",
-    });
+    await deps.updateDigestReport(report.id, { sentAt: null, status: "failed" });
     logger.error("digest delivery failed because markdown body is empty", {
       digestId: report.id,
       trigger: jobData.trigger,
@@ -206,13 +231,11 @@ export async function runDigestDeliver(
   try {
     transportConfig = getRequiredEmailTransportConfig(appEnv);
   } catch (error) {
-    await deps.updateDigestReport(report.id, {
-      sentAt: null,
-      status: "failed",
-    });
+    await deps.updateDigestReport(report.id, { sentAt: null, status: "failed" });
     throw error;
   }
 
+  // 5. 执行投递
   try {
     await deps.sendDigestEmail({
       from: transportConfig.from,
@@ -227,6 +250,7 @@ export async function runDigestDeliver(
 
     const sentAt = deps.now();
 
+    // 6. 持久化发送成功状态
     await deps.updateDigestReport(report.id, {
       sentAt,
       status: "sent",
@@ -247,10 +271,7 @@ export async function runDigestDeliver(
   } catch (error) {
     const message = toErrorMessage(error);
 
-    await deps.updateDigestReport(report.id, {
-      sentAt: null,
-      status: "failed",
-    });
+    await deps.updateDigestReport(report.id, { sentAt: null, status: "failed" });
     logger.error("digest delivery send failed", {
       digestId: report.id,
       error: message,
@@ -261,4 +282,4 @@ export async function runDigestDeliver(
   }
 }
 
-export type { DigestReportRecord, DigestReportUpdate, EmailDeliveryEnv };
+export type { DigestDeliverJobData, DigestReportRecord, DigestReportUpdate, EmailDeliveryEnv };

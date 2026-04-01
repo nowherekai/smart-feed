@@ -1,3 +1,9 @@
+/**
+ * 内容核心业务服务模块
+ * 负责处理从来源抓取（Source Fetch）到 HTML 提取、内容标准化（Normalization）的完整业务逻辑。
+ * 包含：RSS/Atom 解析、三级去重、时间窗口过滤、全文抓取控制及流水线状态推进。
+ */
+
 import { and, eq } from "drizzle-orm";
 
 import { type AppEnv, getAppEnv } from "../config";
@@ -13,6 +19,7 @@ type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<
 
 const SMART_FEED_USER_AGENT = "smart-feed/1.0 (+https://github.com/nowherekai/smart-feed)";
 
+// 类型缩写定义
 type SourceRecord = typeof sources.$inferSelect;
 type SourceUpdate = Partial<Omit<typeof sources.$inferInsert, "id" | "identifier" | "type">>;
 type ContentItemRecord = typeof contentItems.$inferSelect;
@@ -27,58 +34,76 @@ type ContentWithRaw = {
   raw: ContentItemRawRecord | null;
 };
 
+/** 来源抓取 Job 数据 */
 export type SourceFetchJobData = {
   importRunId?: string;
   sourceId: string;
   trigger: "source.import" | "scheduler";
 };
 
+/** 全文 HTML 抓取 Job 数据 */
 export type ContentFetchHtmlJobData = {
   contentId: string;
   pipelineRunId?: string;
   trigger: "source.fetch";
 };
 
+/** 内容标准化 Job 数据 */
 export type ContentNormalizeJobData = {
   contentId: string;
   pipelineRunId?: string;
   trigger: "content.fetch-html";
 };
 
+/** 基础分析 Job 数据 */
 export type ContentAnalyzeBasicJobData = {
   contentId: string;
   pipelineRunId?: string;
   trigger: "content.normalize";
 };
 
+/** 深度摘要 Job 数据 */
 export type ContentAnalyzeHeavyJobData = {
   contentId: string;
   pipelineRunId?: string;
   trigger: "content.analyze.basic";
 };
 
+/** 来源抓取执行汇总结果 */
 export type SourceFetchSummary = {
+  /** 成功创建并入库的文章数 */
   createdCount: number;
+  /** 因重复而被过滤的文章数 */
   duplicateCount: number;
+  /** 从 Feed 中解析出的文章总数 */
   fetchedCount: number;
+  /** 成功入队到后续流水线的文章数 */
   queuedCount: number;
+  /** 因超出时间窗口仅记录为哨兵的文章数 */
   sentinelCount: number;
   sourceId: string;
   status: "completed" | "failed";
 };
 
+/** HTML 抓取步骤产出的业务载荷 */
 export type ContentFetchHtmlPayload = {
   contentId: string;
+  /** 是否成功执行了网络抓取 */
   fetched: boolean;
+  /** 是否回退使用了 RSS 原始内容 */
   usedFallback: boolean;
 };
 
+/** 标准化步骤产出的业务载荷 */
 export type ContentNormalizePayload = {
   contentId: string;
+  /** 生成的 Markdown 字节大小 */
   markdownBytes: number;
+  /** 是否因长度限制被截断 */
   truncated: boolean;
 };
 
+// 依赖项定义，支持依赖注入测试
 export type SourceFetchDeps = {
   appEnv?: Pick<AppEnv, "timeWindowHours" | "timeZone">;
   createContentItem?: (data: NewContentItem) => Promise<ContentReference>;
@@ -114,6 +139,8 @@ function requireInsertedRow<T>(row: T | undefined, entityName: string): T {
 
   return row;
 }
+
+// --- 数据库操作辅助函数 ---
 
 async function getSourceById(sourceId: string): Promise<SourceRecord | null> {
   const db = getDb();
@@ -231,6 +258,9 @@ function toFailureMessage(error: unknown): string {
   return "Unknown source fetch error.";
 }
 
+/**
+ * 构建抓取请求头，包含 ETag 和 Last-Modified 支持
+ */
 function buildRequestHeaders(source: SourceRecord): HeadersInit {
   const headers: Record<string, string> = {
     accept: "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
@@ -248,6 +278,9 @@ function buildRequestHeaders(source: SourceRecord): HeadersInit {
   return headers;
 }
 
+/**
+ * 从解析出的文章列表中找出“最新”的一篇（基于业务时间）
+ */
 function getLatestSeenItem(items: ParsedRssItem[]): ParsedRssItem | undefined {
   let latestSeenItem: ParsedRssItem | undefined;
   let latestSeenTimestamp = Number.NEGATIVE_INFINITY;
@@ -269,6 +302,12 @@ function getLatestSeenItem(items: ParsedRssItem[]): ParsedRssItem | undefined {
   return latestSeenItem;
 }
 
+/**
+ * 三级去重逻辑
+ * 1. 优先使用 externalId (RSS GUID)。
+ * 2. 其次使用规范化后的原始 URL。
+ * 3. 最后使用原始 URL 哈希值作为回退。
+ */
 async function findExistingContent(
   sourceId: string,
   item: ParsedRssItem,
@@ -301,6 +340,9 @@ async function findExistingContent(
   return null;
 }
 
+/**
+ * 构建更新后的同步游标
+ */
 function buildNextSyncCursor(
   source: SourceRecord,
   items: ParsedRssItem[],
@@ -317,6 +359,10 @@ function buildNextSyncCursor(
   };
 }
 
+/**
+ * 判断是否需要持久化原始内容
+ * 时间窗口内的内容或有实质内容的哨兵需要持久化。
+ */
 function shouldPersistRaw(item: ParsedRssItem, inTimeWindow: boolean): boolean {
   if (inTimeWindow) {
     return true;
@@ -325,6 +371,9 @@ function shouldPersistRaw(item: ParsedRssItem, inTimeWindow: boolean): boolean {
   return item.rawBody.trim().length > 0 || item.rawExcerpt !== null;
 }
 
+/**
+ * 自动识别原始内容格式
+ */
 function getRawContentFormat(item: ParsedRssItem): NewContentItemRaw["format"] {
   const content = item.rawBody.trim() || item.rawExcerpt?.trim() || "";
 
@@ -334,6 +383,8 @@ function getRawContentFormat(item: ParsedRssItem): NewContentItemRaw["format"] {
 
   return "text";
 }
+
+// --- 依赖构建辅助函数 ---
 
 function buildSourceFetchDeps(overrides: SourceFetchDeps): Required<SourceFetchDeps> {
   return {
@@ -369,6 +420,20 @@ function buildContentNormalizeDeps(overrides: ContentNormalizeDeps): Required<Co
   };
 }
 
+/**
+ * 来源抓取核心业务逻辑
+ * 1. 获取并校验来源状态。
+ * 2. 抓取 Feed XML (支持 304 Not Modified)。
+ * 3. 解析 Feed 得到文章列表。
+ * 4. 遍历文章：
+ *    - 执行三级去重。
+ *    - 判断是否在时间窗口内。
+ *    - 创建 ContentItem 记录。
+ *    - 根据状态 (inTimeWindow) 决定标记为 raw 或 sentinel。
+ *    - 持久化原始内容 (content_item_raws)。
+ *    - 只有 raw 状态的文章才会入队下一步：全文 HTML 抓取。
+ * 5. 更新 Source 同步状态和游标。
+ */
 export async function runSourceFetch(
   jobData: SourceFetchJobData,
   overrides: SourceFetchDeps = {},
@@ -410,6 +475,7 @@ export async function runSourceFetch(
       signal: AbortSignal.timeout(10_000),
     });
 
+    // 处理 304 缓存逻辑
     if (response.status === 304) {
       await deps.updateSource(source.id, {
         lastErrorAt: null,
@@ -464,6 +530,7 @@ export async function runSourceFetch(
         continue;
       }
 
+      // 1. 去重检查
       const existingContent = await findExistingContent(source.id, item, deps);
 
       if (existingContent) {
@@ -471,7 +538,10 @@ export async function runSourceFetch(
         continue;
       }
 
+      // 2. 时间窗口判定
       const inTimeWindow = isInTimeWindow(effectiveAt, deps.appEnv.timeWindowHours, deps.appEnv.timeZone, fetchedAt);
+
+      // 3. 创建内容基础记录
       const contentItem = await deps.createContentItem({
         author: item.author,
         effectiveAt,
@@ -482,6 +552,7 @@ export async function runSourceFetch(
         originalUrlHash: item.originalUrlHash,
         publishedAt: item.publishedAt,
         sourceId: source.id,
+        // 若超出窗口，标记为 sentinel（仅存哨兵，不流水线处理）
         status: inTimeWindow ? "raw" : "sentinel",
         title: item.title,
       });
@@ -492,6 +563,7 @@ export async function runSourceFetch(
         sentinelCount += 1;
       }
 
+      // 4. 存储原始内容负载
       if (shouldPersistRaw(item, inTimeWindow)) {
         await deps.createContentItemRaw({
           contentId: contentItem.id,
@@ -502,6 +574,7 @@ export async function runSourceFetch(
         });
       }
 
+      // 5. 若在窗口内，入队下一步处理器
       if (inTimeWindow) {
         await deps.enqueueContentFetchHtml({
           contentId: contentItem.id,
@@ -511,6 +584,7 @@ export async function runSourceFetch(
       }
     }
 
+    // 6. 更新来源同步元数据
     await deps.updateSource(source.id, {
       lastErrorAt: null,
       lastErrorMessage: null,
@@ -546,6 +620,12 @@ export async function runSourceFetch(
   }
 }
 
+/**
+ * 全文 HTML 抓取业务逻辑
+ * 无论 RSS 是否提供全文，都优先尝试抓取原始页面以获取最新、最全、格式最整洁的内容。
+ * 若抓取成功，更新 raw_body。
+ * 若抓取失败，且 RSS 已有原始内容，则通过“completed_with_fallback”降级完成并继续流水线。
+ */
 export async function runContentFetchHtml(
   jobData: ContentFetchHtmlJobData,
   overrides: ContentFetchHtmlDeps = {},
@@ -586,7 +666,10 @@ export async function runContentFetchHtml(
   let usedFallback = false;
 
   try {
+    // 尝试抓取全文
     const fetchedHtml = await deps.fetchHtml(record.content.originalUrl);
+
+    // 更新内容，将原有内容作为摘要备选
     await deps.updateContentItemRaw(record.content.id, {
       format: "html",
       rawBody: fetchedHtml,
@@ -602,6 +685,7 @@ export async function runContentFetchHtml(
     const errorMessage = toFailureMessage(error);
     const fallbackAvailable = Boolean(record.raw.rawBody.trim() || record.raw.rawExcerpt?.trim());
 
+    // 抓取失败且没有 RSS 原始内容，则流水线失败
     if (!fallbackAvailable) {
       await deps.updateContentItem(record.content.id, {
         processingError: errorMessage,
@@ -618,6 +702,7 @@ export async function runContentFetchHtml(
       });
     }
 
+    // 抓取失败但有 RSS 原始内容，标记为使用降级方案，允许继续
     usedFallback = true;
     await deps.updateContentItem(record.content.id, {
       processingError: errorMessage,
@@ -649,6 +734,11 @@ export async function runContentFetchHtml(
   });
 }
 
+/**
+ * 内容标准化业务逻辑
+ * 将 HTML 转换为 Markdown，并存储到 cleaned_md 字段。
+ * 转换后，将状态推进至 normalized。
+ */
 export async function runContentNormalize(
   jobData: ContentNormalizeJobData,
   overrides: ContentNormalizeDeps = {},
@@ -686,6 +776,7 @@ export async function runContentNormalize(
   }
 
   try {
+    // 调用转换工具：HTML -> Markdown (包含清洗噪音逻辑)
     const normalized = deps.normalizeContent({
       format: record.raw.format,
       originalUrl: record.content.originalUrl,
