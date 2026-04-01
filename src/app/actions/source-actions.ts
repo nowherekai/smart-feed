@@ -4,6 +4,25 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { type Source, sources } from "@/db/schema";
+import { runSourceImport } from "@/services/source-import";
+
+export type AddSourceResult =
+  | {
+      status: "created";
+      message: string;
+      normalizedUrl: string;
+      sourceId: string;
+    }
+  | {
+      status: "skipped_duplicate";
+      message: string;
+      normalizedUrl: string;
+      sourceId: string;
+    }
+  | {
+      status: "failed";
+      message: string;
+    };
 
 export async function getSources(): Promise<Source[]> {
   const result = await db.query.sources.findMany({
@@ -12,17 +31,60 @@ export async function getSources(): Promise<Source[]> {
   return result;
 }
 
-export async function addSource(url: string, title: string) {
-  await db.insert(sources).values({
-    type: "rss-source",
-    identifier: url,
-    title: title,
-    status: "active",
-    weight: 1.0,
-  });
+function toFailureMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
 
-  revalidatePath("/sources");
-  revalidatePath("/");
+  return "Failed to add source.";
+}
+
+export async function addSource(url: string): Promise<AddSourceResult> {
+  try {
+    const result = await runSourceImport({
+      mode: "single",
+      url,
+    });
+    const outcome = result.items[0];
+
+    if (!outcome) {
+      return {
+        status: "failed",
+        message: "Failed to add source.",
+      };
+    }
+
+    if (outcome.result === "failed") {
+      return {
+        status: "failed",
+        message: outcome.errorMessage ?? "Failed to add source.",
+      };
+    }
+
+    if (!outcome.normalizedUrl || !outcome.sourceId) {
+      return {
+        status: "failed",
+        message: "Failed to add source.",
+      };
+    }
+
+    revalidatePath("/sources");
+    revalidatePath("/");
+
+    return {
+      status: outcome.result,
+      message: outcome.result === "created" ? "Source added." : "Source already exists.",
+      normalizedUrl: outcome.normalizedUrl,
+      sourceId: outcome.sourceId,
+    };
+  } catch (error) {
+    console.error("Failed to add source", error);
+
+    return {
+      status: "failed",
+      message: toFailureMessage(error),
+    };
+  }
 }
 
 export async function toggleSourceStatus(id: string, currentStatus: "active" | "paused" | "blocked") {

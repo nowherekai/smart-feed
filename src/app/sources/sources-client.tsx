@@ -1,33 +1,80 @@
 "use client";
 
-import { AlertCircle } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { addSource, removeSource, toggleSourceStatus } from "@/app/actions/source-actions";
+import { type AddSourceResult, addSource, removeSource, toggleSourceStatus } from "@/app/actions/source-actions";
 import type { SourceListItem } from "@/app/sources/types";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 type OptimisticSourceAction =
-  | { type: "add"; source: SourceListItem }
   | { type: "remove"; id: string }
   | { type: "toggle"; id: string; status: SourceListItem["status"] };
+
+type AddSourceFeedback = {
+  message: string;
+  shouldClearInput: boolean;
+  shouldRefresh: boolean;
+  tone: "success" | "error";
+};
+
+export function getAddSourceFeedback(result: AddSourceResult): AddSourceFeedback {
+  switch (result.status) {
+    case "created":
+      return {
+        tone: "success",
+        message: result.message || "Source added.",
+        shouldClearInput: true,
+        shouldRefresh: true,
+      };
+    case "skipped_duplicate":
+      return {
+        tone: "success",
+        message: result.message || "Source already exists.",
+        shouldClearInput: true,
+        shouldRefresh: true,
+      };
+    case "failed":
+      return {
+        tone: "error",
+        message: result.message || "Failed to add source.",
+        shouldClearInput: false,
+        shouldRefresh: false,
+      };
+    default:
+      return {
+        tone: "error",
+        message: "Failed to add source.",
+        shouldClearInput: false,
+        shouldRefresh: false,
+      };
+  }
+}
 
 export function SourcesClient({ initialSources }: { initialSources: SourceListItem[] }) {
   const router = useRouter();
   const [newSourceUrl, setNewSourceUrl] = useState("");
-  const [newSourceTitle, setNewSourceTitle] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const [optimisticSources, setOptimisticSources] = useOptimistic(
     initialSources,
     (state, action: OptimisticSourceAction) => {
       switch (action.type) {
-        case "add":
-          return [action.source, ...state];
         case "remove":
           return state.filter((source) => source.id !== action.id);
         case "toggle":
@@ -42,26 +89,32 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
 
   const handleAddSource = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!newSourceUrl.trim() || !newSourceTitle.trim()) return;
+    if (!newSourceUrl.trim()) return;
 
     const url = newSourceUrl.trim();
-    const title = newSourceTitle.trim();
 
     startTransition(async () => {
-      const optimisticSource = createOptimisticSource(title, url);
-      setOptimisticSources({ type: "add", source: optimisticSource });
-      setNewSourceUrl("");
-      setNewSourceTitle("");
-
       try {
-        await addSource(url, title);
-        router.refresh();
-        toast.success("Source added.");
+        const result = await addSource(url);
+        const feedback = getAddSourceFeedback(result);
+
+        if (feedback.shouldClearInput) {
+          setNewSourceUrl("");
+        }
+
+        if (feedback.shouldRefresh) {
+          router.refresh();
+        }
+
+        if (feedback.tone === "success") {
+          toast.success(feedback.message);
+          return;
+        }
+
+        toast.error(feedback.message);
       } catch (error) {
         console.error("Failed to add source", error);
         setNewSourceUrl(url);
-        setNewSourceTitle(title);
-        router.refresh();
         toast.error("Failed to add source.");
       }
     });
@@ -110,18 +163,11 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
         <CardContent>
           <form onSubmit={handleAddSource} className="flex flex-col sm:flex-row gap-4">
             <Input
-              placeholder="Source Title (e.g. TechCrunch)"
-              value={newSourceTitle}
-              onChange={(event) => setNewSourceTitle(event.target.value)}
-              className="flex-1"
-              required
-            />
-            <Input
               placeholder="RSS Feed URL"
               value={newSourceUrl}
               type="url"
               onChange={(event) => setNewSourceUrl(event.target.value)}
-              className="flex-[2]"
+              className="flex-1"
               required
             />
             <Button type="submit" disabled={isPending}>
@@ -149,16 +195,36 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
                 >
                   {source.status}
                 </Badge>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                  onClick={() => handleRemoveSource(source.id)}
-                  disabled={isPending}
-                >
-                  <AlertCircle size={16} />
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        disabled={isPending}
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    }
+                  />
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>确定要删除该来源吗？</AlertDialogTitle>
+                      <AlertDialogDescription>此操作无法撤销。这将永久删除该数据源。</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleRemoveSource(source.id)}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        删除
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
               <CardTitle className="text-lg mt-2 truncate">{source.title}</CardTitle>
               <CardDescription className="truncate text-xs">{source.identifier}</CardDescription>
@@ -185,15 +251,6 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
       </div>
     </div>
   );
-}
-
-function createOptimisticSource(title: string, identifier: string): SourceListItem {
-  return {
-    id: crypto.randomUUID(),
-    title,
-    identifier,
-    status: "active",
-  };
 }
 
 function getNextStatus(status: SourceListItem["status"]) {
