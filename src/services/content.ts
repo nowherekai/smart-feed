@@ -10,7 +10,7 @@ import { type AppEnv, getAppEnv } from "../config";
 import { contentItemRaws, contentItems, getDb, sources } from "../db";
 import { type ParsedRssFeed, type ParsedRssItem, parseRssFeed } from "../parsers";
 import { createCompletedStepResult, createFailedStepResult, type PipelineStepResult } from "../pipeline/types";
-import { createQueue, jobNames } from "../queue";
+import { getQueueForTask, smartFeedTaskNames } from "../queue";
 import { getEffectiveTime, isInTimeWindow, logger } from "../utils";
 import { fetchPageHtml, getRawBodyExcerptCandidate } from "./html-fetcher";
 import { normalizeRawContent } from "./normalizer";
@@ -246,8 +246,8 @@ async function createContentItemRaw(data: NewContentItemRaw): Promise<void> {
 }
 
 async function enqueueContentFetchHtml(data: ContentFetchHtmlJobData): Promise<void> {
-  const queue = createQueue<ContentFetchHtmlJobData>();
-  await queue.add(jobNames.contentFetchHtml, data);
+  const queue = getQueueForTask<ContentFetchHtmlJobData>(smartFeedTaskNames.contentFetchHtml);
+  await queue.add(smartFeedTaskNames.contentFetchHtml, data);
 }
 
 function toFailureMessage(error: unknown): string {
@@ -723,7 +723,7 @@ export async function runContentFetchHtml(
         contentId: record.content.id,
         trigger: "content.fetch-html",
       },
-      jobName: jobNames.contentNormalize,
+      jobName: smartFeedTaskNames.contentNormalize,
     },
     outcome: usedFallback ? "completed_with_fallback" : "completed",
     payload: {
@@ -797,7 +797,7 @@ export async function runContentNormalize(
           contentId: record.content.id,
           trigger: "content.normalize",
         },
-        jobName: jobNames.contentAnalyzeBasic,
+        jobName: smartFeedTaskNames.contentAnalyzeBasic,
       },
       payload: {
         contentId: record.content.id,

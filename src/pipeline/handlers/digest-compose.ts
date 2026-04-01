@@ -4,7 +4,7 @@
  */
 
 import type { Job } from "bullmq";
-import type { JobName } from "../../queue";
+import type { SmartFeedTaskName } from "../../queue";
 import { type DigestComposeJobData, type DigestComposePayload, runDigestCompose } from "../../services/digest";
 import { type DigestPipelineRuntimeDeps, executeDigestPipelineStep } from "../../services/digest-pipeline-runtime";
 import type { PipelineStepExecutionResult, PipelineStepResult } from "../types";
@@ -22,7 +22,7 @@ export function createDigestComposeHandler(
   runtimeDeps?: DigestPipelineRuntimeDeps,
 ) {
   return async function digestComposeHandler(
-    job: Job<DigestComposeJobData, DigestComposePipelineResult, JobName>,
+    job: Job<DigestComposeJobData, DigestComposePipelineResult, SmartFeedTaskName>,
   ): Promise<DigestComposePipelineResult> {
     return executeDigestPipelineStep({
       deps: runtimeDeps,

@@ -4,7 +4,7 @@
  */
 
 import type { Job } from "bullmq";
-import type { JobName } from "../../queue";
+import type { SmartFeedTaskName } from "../../queue";
 import {
   type ContentFetchHtmlJobData,
   type ContentFetchHtmlPayload,
@@ -26,7 +26,7 @@ export function createContentFetchHtmlHandler(
   runtimeDeps?: ContentPipelineRuntimeDeps,
 ) {
   return async function contentFetchHtmlHandler(
-    job: Job<ContentFetchHtmlJobData, ContentFetchHtmlPipelineResult, JobName>,
+    job: Job<ContentFetchHtmlJobData, ContentFetchHtmlPipelineResult, SmartFeedTaskName>,
   ): Promise<ContentFetchHtmlPipelineResult> {
     return executeContentPipelineStep({
       deps: runtimeDeps,

@@ -8,7 +8,7 @@
  */
 
 import type { ContentPipelineJobData, PipelineStepExecutionResult, PipelineStepResult } from "../pipeline/types";
-import { createQueue, type JobName } from "../queue";
+import { getQueueForTask, type SmartFeedTaskName } from "../queue";
 import {
   createPipelineRun,
   createStepRun,
@@ -23,7 +23,7 @@ const CONTENT_PIPELINE_NAME = "content-processing";
 const CONTENT_PIPELINE_VERSION = "v1";
 
 /** 入队任务函数类型 */
-type EnqueueJob = (jobName: JobName, data: Record<string, unknown>) => Promise<void>;
+type EnqueueJob = (taskName: SmartFeedTaskName, data: Record<string, unknown>) => Promise<void>;
 
 /** 运行时依赖项，支持依赖注入以方便测试 */
 type ContentPipelineRuntimeDeps = {
@@ -42,7 +42,7 @@ type ExecuteContentPipelineStepOptions<
 > = {
   deps?: ContentPipelineRuntimeDeps;
   jobData: TJobData;
-  jobName: JobName;
+  jobName: SmartFeedTaskName;
   /** 具体的业务执行函数 */
   runStep: (jobData: TJobData) => Promise<PipelineStepResult<TPayload>>;
 };
@@ -66,9 +66,9 @@ function toErrorMessage(error: unknown): string {
 }
 
 /** 默认的任务入队实现，直接调用 BullMQ */
-async function defaultEnqueueJob(jobName: JobName, data: Record<string, unknown>): Promise<void> {
-  const queue = createQueue<Record<string, unknown>>();
-  await queue.add(jobName, data);
+async function defaultEnqueueJob(taskName: SmartFeedTaskName, data: Record<string, unknown>): Promise<void> {
+  const queue = getQueueForTask<Record<string, unknown>>(taskName);
+  await queue.add(taskName, data);
 }
 
 /** 构建并填充默认依赖 */

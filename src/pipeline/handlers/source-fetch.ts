@@ -5,7 +5,7 @@
 
 import type { Job } from "bullmq";
 
-import type { JobName } from "../../queue";
+import type { SmartFeedTaskName } from "../../queue";
 import { runSourceFetch, type SourceFetchJobData, type SourceFetchSummary } from "../../services/content";
 
 /** 来源抓取任务结果类型 */
@@ -21,7 +21,7 @@ export function createSourceFetchHandler(
   runFetch: (jobData: SourceFetchJobData) => Promise<SourceFetchSummary> = runSourceFetch,
 ) {
   return async function sourceFetchHandler(
-    job: Job<SourceFetchJobData, SourceFetchPipelineResult, JobName>,
+    job: Job<SourceFetchJobData, SourceFetchPipelineResult, SmartFeedTaskName>,
   ): Promise<SourceFetchPipelineResult> {
     // 1. 执行抓取操作
     const result = await runFetch(job.data);

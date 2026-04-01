@@ -5,14 +5,25 @@
 
 import type { DefaultJobOptions } from "bullmq";
 
-/** 统一的队列名称 */
-export const queueName = "smart-feed";
+/** legacy import 兼容队列名称，仅供 source.import 使用 */
+export const legacyImportQueueName = "smart-feed";
+
+/** 多 worker 职能队列名称 */
+export const queueNames = {
+  sourceDispatch: "source-dispatch-queue",
+  ingestion: "ingestion-queue",
+  content: "content-queue",
+  ai: "ai-queue",
+  digest: "digest-queue",
+} as const;
+
+export type QueueName = (typeof queueNames)[keyof typeof queueNames];
 
 /**
- * 任务名称映射表 (Job Names)
+ * 项目内任务名称映射表
  * 所有在流水线中流转的任务类型都在此定义。
  */
-export const jobNames = {
+export const smartFeedTaskNames = {
   /** 调度器源同步任务 */
   schedulerSourcesSync: "scheduler.sources.sync",
   /** 来源导入任务 */
@@ -33,14 +44,26 @@ export const jobNames = {
   digestDeliver: "digest.deliver",
 } as const;
 
-export type JobName = (typeof jobNames)[keyof typeof jobNames];
+export type SmartFeedTaskName = (typeof smartFeedTaskNames)[keyof typeof smartFeedTaskNames];
+
+/** 任务类型到职能队列的映射，source.import 继续走 legacy queue */
+export const taskToQueueMap: Record<Exclude<SmartFeedTaskName, "source.import">, QueueName> = {
+  [smartFeedTaskNames.schedulerSourcesSync]: queueNames.sourceDispatch,
+  [smartFeedTaskNames.sourceFetch]: queueNames.ingestion,
+  [smartFeedTaskNames.contentFetchHtml]: queueNames.content,
+  [smartFeedTaskNames.contentNormalize]: queueNames.content,
+  [smartFeedTaskNames.contentAnalyzeBasic]: queueNames.ai,
+  [smartFeedTaskNames.contentAnalyzeHeavy]: queueNames.ai,
+  [smartFeedTaskNames.digestCompose]: queueNames.digest,
+  [smartFeedTaskNames.digestDeliver]: queueNames.digest,
+};
 
 /**
  * 构建来源抓取任务的去重 ID
  * 确保同一个来源在同一时间只有一个抓取任务在队列中。
  */
 export function buildSourceFetchDeduplicationId(sourceId: string): string {
-  return `${jobNames.sourceFetch}:${sourceId}`;
+  return `${smartFeedTaskNames.sourceFetch}:${sourceId}`;
 }
 
 /**
@@ -59,5 +82,11 @@ export const defaultJobOptions = {
   removeOnFail: 500,
 } satisfies DefaultJobOptions;
 
-/** Worker 并发度 */
-export const workerConcurrency = 4;
+/** 各职能队列初始并发度 */
+export const workerConcurrencyMap: Record<QueueName, number> = {
+  [queueNames.sourceDispatch]: 1,
+  [queueNames.ingestion]: 2,
+  [queueNames.content]: 5,
+  [queueNames.ai]: 1,
+  [queueNames.digest]: 1,
+};

@@ -1,10 +1,22 @@
-export type { JobName } from "./config";
-export { buildSourceFetchDeduplicationId, defaultJobOptions, jobNames, queueName, workerConcurrency } from "./config";
+export type { QueueName, SmartFeedTaskName } from "./config";
 export {
-  closeQueue,
+  buildSourceFetchDeduplicationId,
+  defaultJobOptions,
+  legacyImportQueueName,
+  queueNames,
+  smartFeedTaskNames,
+  taskToQueueMap,
+  workerConcurrencyMap,
+} from "./config";
+export type { QueueRegistry } from "./connection";
+export {
+  closeAllQueues,
+  closeLegacyImportQueue,
   closeRedisConnection,
-  createQueue,
   createWorker,
+  getLegacyImportQueue,
+  getQueueForTask,
+  getQueueRegistry,
   getRedisConnection,
 } from "./connection";
 export { loadQueueEnv } from "./env";

@@ -6,15 +6,25 @@
 import type { Job, Worker } from "bullmq";
 
 import { type PipelineJobData, type PipelineJobResult, pipelineHandlers } from "../pipeline";
-import { closeRedisConnection, createWorker, type JobName } from "../queue";
+import {
+  closeLegacyImportQueue,
+  closeRedisConnection,
+  createWorker,
+  legacyImportQueueName,
+  type QueueName,
+  queueNames,
+  type SmartFeedTaskName,
+  smartFeedTaskNames,
+} from "../queue";
 import { startScheduler, stopScheduler } from "../scheduler";
 
 /** Worker 应用实例类型子集 */
-type AppWorker = Pick<Worker<PipelineJobData, PipelineJobResult, JobName>, "close" | "on">;
+type AppWorker = Pick<Worker<PipelineJobData, PipelineJobResult, SmartFeedTaskName>, "close" | "on">;
 
 /** Worker 创建工厂函数类型 */
 type WorkerFactory = (
-  processor: (job: Job<PipelineJobData, PipelineJobResult, JobName>) => Promise<PipelineJobResult>,
+  queueName: QueueName | typeof legacyImportQueueName,
+  processor: (job: Job<PipelineJobData, PipelineJobResult, SmartFeedTaskName>) => Promise<PipelineJobResult>,
 ) => AppWorker;
 
 /** 进程接口子集，方便测试注入 */
@@ -28,6 +38,7 @@ type LoggerLike = Pick<typeof console, "error" | "info">;
 
 /** 应用启动依赖项 */
 export type WorkerAppDeps = {
+  closeLegacyImportQueue?: () => Promise<void>;
   closeRedisConnection?: () => Promise<void>;
   createWorker?: WorkerFactory;
   exit?: (code: number) => never | undefined;
@@ -40,14 +51,14 @@ export type WorkerAppDeps = {
 /** 启动后的应用对象 */
 export type WorkerApp = {
   shutdown: (signal: string) => Promise<void>;
-  worker: AppWorker;
+  workers: AppWorker[];
 };
 
 /**
  * 根据 Job 名称查找对应的 Pipeline Handler
  */
 function getHandler(jobName: string) {
-  const handler = pipelineHandlers[jobName as JobName];
+  const handler = pipelineHandlers[jobName as SmartFeedTaskName];
 
   if (!handler) {
     throw new Error(`[worker] Unsupported job "${jobName}".`);
@@ -68,27 +79,51 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
   const processLike = deps.process ?? process;
   const exit = deps.exit ?? ((code: number) => process.exit(code));
   const createAppWorker = deps.createWorker ?? createWorker;
+  const closeLegacyQueue = deps.closeLegacyImportQueue ?? closeLegacyImportQueue;
   const startAppScheduler = deps.startScheduler ?? startScheduler;
   const stopAppScheduler = deps.stopScheduler ?? stopScheduler;
   const closeRedis = deps.closeRedisConnection ?? closeRedisConnection;
 
   logger.info("[worker] Starting smart-feed worker...");
 
-  // 创建 Worker 并定义处理器逻辑
-  const worker = createAppWorker(
-    async (job: Job<PipelineJobData, PipelineJobResult, JobName>): Promise<PipelineJobResult> => {
+  const makeProcessor =
+    (allowedTaskNames: ReadonlySet<SmartFeedTaskName>) =>
+    async (job: Job<PipelineJobData, PipelineJobResult, SmartFeedTaskName>): Promise<PipelineJobResult> => {
+      if (!allowedTaskNames.has(job.name)) {
+        throw new Error(`[worker] Task "${job.name}" is not handled by this worker.`);
+      }
+
       const handler = getHandler(job.name);
       return handler(job);
-    },
-  );
+    };
 
-  worker.on("ready", () => {
-    logger.info("[worker] Worker is ready.");
-  });
+  const workers = [
+    createAppWorker(queueNames.sourceDispatch, makeProcessor(new Set([smartFeedTaskNames.schedulerSourcesSync]))),
+    createAppWorker(queueNames.ingestion, makeProcessor(new Set([smartFeedTaskNames.sourceFetch]))),
+    createAppWorker(
+      queueNames.content,
+      makeProcessor(new Set([smartFeedTaskNames.contentFetchHtml, smartFeedTaskNames.contentNormalize])),
+    ),
+    createAppWorker(
+      queueNames.ai,
+      makeProcessor(new Set([smartFeedTaskNames.contentAnalyzeBasic, smartFeedTaskNames.contentAnalyzeHeavy])),
+    ),
+    createAppWorker(
+      queueNames.digest,
+      makeProcessor(new Set([smartFeedTaskNames.digestCompose, smartFeedTaskNames.digestDeliver])),
+    ),
+    createAppWorker(legacyImportQueueName, makeProcessor(new Set([smartFeedTaskNames.sourceImport]))),
+  ];
 
-  worker.on("failed", (job, error) => {
-    logger.error(`[worker] Job ${job?.id ?? "unknown"} failed.`, error);
-  });
+  for (const worker of workers) {
+    worker.on("ready", () => {
+      logger.info("[worker] Worker is ready.");
+    });
+
+    worker.on("failed", (job, error) => {
+      logger.error(`[worker] Job ${job?.id ?? "unknown"} failed.`, error);
+    });
+  }
 
   // 启动调度器（注册定时任务）
   await startAppScheduler();
@@ -98,8 +133,9 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
    */
   const shutdown = async (signal: string) => {
     logger.info(`[worker] Received ${signal}, shutting down...`);
-    await worker.close();
+    await Promise.all(workers.map((worker) => worker.close()));
     await stopAppScheduler();
+    await closeLegacyQueue();
     await closeRedis();
     exit(0);
   };
@@ -115,7 +151,7 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
 
   return {
     shutdown,
-    worker,
+    workers,
   };
 }
 
@@ -131,6 +167,7 @@ if (import.meta.main) {
   void main().catch(async (error) => {
     console.error("[worker] Failed to start worker.", error);
     await stopScheduler().catch(() => undefined);
+    await closeLegacyImportQueue().catch(() => undefined);
     await closeRedisConnection();
     process.exit(1);
   });
