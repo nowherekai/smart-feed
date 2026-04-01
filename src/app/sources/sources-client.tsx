@@ -46,13 +46,13 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
 
     const url = newSourceUrl.trim();
     const title = newSourceTitle.trim();
-    const optimisticSource = createOptimisticSource(title, url);
-
-    setOptimisticSources({ type: "add", source: optimisticSource });
-    setNewSourceUrl("");
-    setNewSourceTitle("");
 
     startTransition(async () => {
+      const optimisticSource = createOptimisticSource(title, url);
+      setOptimisticSources({ type: "add", source: optimisticSource });
+      setNewSourceUrl("");
+      setNewSourceTitle("");
+
       try {
         await addSource(url, title);
         router.refresh();
