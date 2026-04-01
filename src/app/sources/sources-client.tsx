@@ -78,7 +78,10 @@ export function SourcesClient({ initialSources }: { initialSources: Source[] }) 
   const handleRemoveSource = (id: string) => {
     startTransition(async () => {
       setOptimisticSources({ type: "remove", id });
-      await removeSource(id);
+      const res = await removeSource(id);
+      if (res && !res.success) {
+        alert(res.error);
+      }
     });
   };
 

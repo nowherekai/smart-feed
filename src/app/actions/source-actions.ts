@@ -35,11 +35,11 @@ export async function toggleSourceStatus(id: string, currentStatus: "active" | "
 export async function removeSource(id: string) {
   try {
     await db.delete(sources).where(eq(sources.id, id));
+    revalidatePath("/sources");
+    revalidatePath("/");
+    return { success: true };
   } catch (err: unknown) {
-    // Foreign key constraint failure likely if a source has crawled content.
-    // In strict applications we might soft delete, but per specs we attempt a hard delete.
     console.error("Failed to cleanly delete source", err);
+    return { success: false, error: "Failed to delete source. It may have associated content." };
   }
-  revalidatePath("/sources");
-  revalidatePath("/");
 }
