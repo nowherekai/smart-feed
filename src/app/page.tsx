@@ -1,22 +1,47 @@
-const sections = ["Next.js 全栈入口已就位", "BullMQ worker 骨架已接入", "后续优先推进 pipeline 子系统"];
+"use client";
 
-export default function HomePage() {
+import { AnimatePresence, motion } from "framer-motion";
+import { Clock } from "lucide-react";
+import { IntelligenceCard } from "@/components/features/intelligence-card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useFeedStore } from "@/lib/store";
+
+export default function DashboardPage() {
+  const analysisRecords = useFeedStore((state) => state.analysisRecords);
+
   return (
-    <main className="shell">
-      <section className="hero">
-        <p className="eyebrow">smart-feed</p>
-        <h1>项目骨架已生成</h1>
-        <p className="lead">当前仓库已经切换为单体应用结构：Web 负责界面与 API，worker 负责后台队列与 pipeline。</p>
-      </section>
+    <ScrollArea className="flex-1 w-full h-full">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key="dashboard"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="p-8 max-w-5xl mx-auto space-y-8"
+        >
+          <section>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold tracking-tight">Top Intelligence</h3>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock size={14} />
+                Updated 12m ago
+              </div>
+            </div>
 
-      <section className="panel">
-        <h2>下一步建议</h2>
-        <ul>
-          {sections.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </section>
-    </main>
+            {analysisRecords.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground bg-muted/10 rounded-xl border border-dashed border-border">
+                No intelligence ready yet. Check back later or add more sources.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {analysisRecords.map((record) => (
+                  <IntelligenceCard key={record.id} record={record} />
+                ))}
+              </div>
+            )}
+          </section>
+        </motion.div>
+      </AnimatePresence>
+    </ScrollArea>
   );
 }
