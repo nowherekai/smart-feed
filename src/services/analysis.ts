@@ -21,6 +21,7 @@ import { type AppEnv, getAppEnv } from "../config";
 import { analysisRecords, contentItems, getDb, sources } from "../db";
 import { createCompletedStepResult, createFailedStepResult, type PipelineStepResult } from "../pipeline/types";
 import { smartFeedTaskNames } from "../queue";
+import { logger } from "../utils";
 import type { ContentAnalyzeBasicJobData, ContentAnalyzeHeavyJobData } from "./content";
 import { canEnterDigest } from "./traceability";
 
@@ -464,6 +465,12 @@ export async function runContentAnalyzeHeavy(
   jobData: ContentAnalyzeHeavyJobData,
   overrides: ContentAnalyzeHeavyDeps = {},
 ): Promise<PipelineStepResult<ContentAnalyzeHeavyPayload>> {
+  logger.info("runContentAnalyzeHeavy started", {
+    contentId: jobData.contentId,
+    pipelineRunId: jobData.pipelineRunId,
+    trigger: jobData.trigger,
+  });
+
   const deps = buildHeavyDeps(overrides);
   const record = await deps.getContentForAnalysisById(jobData.contentId);
 

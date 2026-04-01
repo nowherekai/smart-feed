@@ -11,6 +11,7 @@ import {
   runContentFetchHtml,
 } from "../../services/content";
 import { type ContentPipelineRuntimeDeps, executeContentPipelineStep } from "../../services/pipeline-runtime";
+import { logger } from "../../utils";
 import type { PipelineStepExecutionResult } from "../types";
 
 /** HTML 抓取流水线结果类型 */
@@ -28,6 +29,12 @@ export function createContentFetchHtmlHandler(
   return async function contentFetchHtmlHandler(
     job: Job<ContentFetchHtmlJobData, ContentFetchHtmlPipelineResult, SmartFeedTaskName>,
   ): Promise<ContentFetchHtmlPipelineResult> {
+    logger.info(`[handler] ${job.name} started`, {
+      contentId: job.data.contentId,
+      jobId: job.id,
+      pipelineRunId: job.data.pipelineRunId,
+      trigger: job.data.trigger,
+    });
     return executeContentPipelineStep({
       deps: runtimeDeps,
       jobData: job.data,

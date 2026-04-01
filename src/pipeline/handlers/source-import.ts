@@ -7,6 +7,7 @@ import type { Job } from "bullmq";
 
 import type { SmartFeedTaskName } from "../../queue";
 import { runSourceImport, type SourceImportJobData } from "../../services/source-import";
+import { logger } from "../../utils";
 
 /** 来源导入流水线结果类型 */
 export type SourceImportPipelineResult = {
@@ -34,6 +35,10 @@ export type SourceImportPipelineResult = {
 export async function sourceImportHandler(
   job: Job<SourceImportJobData, SourceImportPipelineResult, SmartFeedTaskName>,
 ): Promise<SourceImportPipelineResult> {
+  logger.info(`[handler] ${job.name} started`, {
+    jobId: job.id,
+    mode: job.data.mode,
+  });
   const result = await runSourceImport(job.data);
 
   return {

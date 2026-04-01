@@ -743,6 +743,12 @@ export async function runContentNormalize(
   jobData: ContentNormalizeJobData,
   overrides: ContentNormalizeDeps = {},
 ): Promise<PipelineStepResult<ContentNormalizePayload, ContentAnalyzeBasicJobData>> {
+  logger.info("runContentNormalize started", {
+    contentId: jobData.contentId,
+    pipelineRunId: jobData.pipelineRunId,
+    trigger: jobData.trigger,
+  });
+
   const deps = buildContentNormalizeDeps(overrides);
   const record = await deps.getContentWithRawById(jobData.contentId);
 
