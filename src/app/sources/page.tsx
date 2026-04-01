@@ -21,8 +21,8 @@ export default function SourcesPage() {
 
   const handleAddSource = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newSourceUrl && newSourceTitle) {
-      addSource(newSourceUrl, newSourceTitle);
+    if (newSourceUrl.trim() && newSourceTitle.trim()) {
+      addSource(newSourceUrl.trim(), newSourceTitle.trim());
       setNewSourceUrl("");
       setNewSourceTitle("");
     }
