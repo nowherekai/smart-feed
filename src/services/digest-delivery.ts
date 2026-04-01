@@ -142,6 +142,12 @@ export async function runDigestDeliver(
   jobData: DigestDeliverJobData,
   overrides: DigestDeliverDeps = {},
 ): Promise<PipelineStepResult<DigestDeliverPayload>> {
+  logger.info("runDigestDeliver started", {
+    digestId: jobData.digestId,
+    pipelineRunId: jobData.pipelineRunId,
+    trigger: jobData.trigger,
+  });
+
   const deps = buildDeps(overrides);
   const report = await deps.getDigestReportById(jobData.digestId);
 

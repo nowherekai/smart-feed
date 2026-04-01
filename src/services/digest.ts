@@ -10,7 +10,7 @@ import { type AppEnv, getAppEnv } from "../config";
 import { type AnalysisSummary, analysisRecords, contentItems, digestItems, digestReports, getDb, sources } from "../db";
 import { createCompletedStepResult, type PipelineStepResult } from "../pipeline/types";
 import { smartFeedTaskNames } from "../queue";
-import { getDigestWindow } from "../utils";
+import { getDigestWindow, logger } from "../utils";
 import { type DigestRenderableItem, type DigestRenderSection, renderDigestMarkdown } from "./digest-renderer";
 import { canEnterDigest } from "./traceability";
 
@@ -428,6 +428,11 @@ export async function runDigestCompose(
   _jobData: DigestComposeJobData,
   overrides: DigestComposeDeps = {},
 ): Promise<PipelineStepResult<DigestComposePayload, DigestDeliverJobData>> {
+  logger.info("runDigestCompose started", {
+    pipelineRunId: _jobData.pipelineRunId,
+    trigger: _jobData.trigger,
+  });
+
   const deps = buildDigestDeps(overrides);
 
   // 1. 获取统计区间
