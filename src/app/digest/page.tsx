@@ -31,6 +31,7 @@ export default async function DailyDigestPage() {
           <h3 className="text-3xl font-bold tracking-tight">Daily Intelligence Digest</h3>
           <p className="text-muted-foreground">
             {new Date().toLocaleDateString("zh-CN", {
+              timeZone: "Asia/Shanghai",
               weekday: "long",
               year: "numeric",
               month: "long",
