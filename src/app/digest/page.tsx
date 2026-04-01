@@ -1,7 +1,7 @@
 "use client";
 
-import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import * as React from "react";
 import { DigestItem } from "@/components/features/digest-item";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -14,8 +14,12 @@ export default function DailyDigestPage() {
     const map = new Map<string, typeof analysisRecords>();
     for (const r of analysisRecords) {
       for (const c of r.category) {
-        if (!map.has(c)) map.set(c, []);
-        map.get(c)!.push(r);
+        let list = map.get(c);
+        if (!list) {
+          list = [];
+          map.set(c, list);
+        }
+        list.push(r);
       }
     }
     return Array.from(map.entries()).map(([category, items]) => ({ category, items }));
