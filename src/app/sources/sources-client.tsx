@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { addSource, removeSource, toggleSourceStatus } from "@/app/actions/source-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,27 @@ import { Input } from "@/components/ui/input";
 import type { Source } from "@/db/schema";
 
 export function SourcesClient({ initialSources }: { initialSources: Source[] }) {
-  const [sources, setSources] = useState<Source[]>(initialSources);
   const [newSourceUrl, setNewSourceUrl] = useState("");
   const [newSourceTitle, setNewSourceTitle] = useState("");
   const [isPending, startTransition] = useTransition();
+
+  const [optimisticSources, setOptimisticSources] = useOptimistic(
+    initialSources,
+    (state, action: { type: "add" | "remove" | "toggle"; source?: Source; id?: string; status?: string }) => {
+      switch (action.type) {
+        case "add":
+          return [action.source!, ...state];
+        case "remove":
+          return state.filter((s) => s.id !== action.id);
+        case "toggle":
+          return state.map((s) =>
+            s.id === action.id ? { ...s, status: action.status === "active" ? "paused" : "active" } : s,
+          );
+        default:
+          return state;
+      }
+    },
+  );
 
   const handleAddSource = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,29 +57,24 @@ export function SourcesClient({ initialSources }: { initialSources: Source[] }) 
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      setSources((prev) => [newSource, ...prev]);
+      setOptimisticSources({ type: "add", source: newSource });
 
       await addSource(newSourceUrl.trim(), newSourceTitle.trim());
       setNewSourceUrl("");
       setNewSourceTitle("");
-      // Real refresh handled by page revalidation since it is a Server Component up top
-      // But because Next.js sometimes preserves state across navigation, we shouldn't rely entirely on optimistic
-      // array if we are passing initialSources on every mount. Since it's passed as prop, it will be updated.
     });
   };
 
   const handleToggleSource = (id: string, currentStatus: "active" | "paused" | "blocked") => {
     startTransition(async () => {
-      setSources((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, status: currentStatus === "active" ? "paused" : "active" } : s)),
-      );
+      setOptimisticSources({ type: "toggle", id, status: currentStatus });
       await toggleSourceStatus(id, currentStatus);
     });
   };
 
   const handleRemoveSource = (id: string) => {
     startTransition(async () => {
-      setSources((prev) => prev.filter((s) => s.id !== id));
+      setOptimisticSources({ type: "remove", id });
       await removeSource(id);
     });
   };
@@ -106,7 +118,7 @@ export function SourcesClient({ initialSources }: { initialSources: Source[] }) 
         </Card>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {sources.map((source) => (
+          {optimisticSources.map((source) => (
             <Card
               key={source.id}
               className={`group transition-all border-border ${
@@ -147,7 +159,7 @@ export function SourcesClient({ initialSources }: { initialSources: Source[] }) 
             </Card>
           ))}
 
-          {sources.length === 0 && (
+          {optimisticSources.length === 0 && (
             <div className="col-span-full text-center py-12 text-muted-foreground bg-muted/10 rounded-xl border border-dashed border-border">
               No sources configured. Try adding an RSS feed above!
             </div>
