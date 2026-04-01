@@ -67,7 +67,7 @@ async function DailyDigestSections() {
 }
 
 function groupDigestRecords(records: Awaited<ReturnType<typeof getDailyDigestItems>>) {
-  const map = new Map<string, ReturnType<typeof toDigestItemRecord>[]>();
+  const map = new Map<string, NonNullable<ReturnType<typeof toDigestItemRecord>>[]>();
 
   for (const record of records) {
     const digestRecord = toDigestItemRecord(record);
@@ -89,7 +89,7 @@ function groupDigestRecords(records: Awaited<ReturnType<typeof getDailyDigestIte
 
   return Array.from(map.entries()).map(([category, items]) => ({
     category,
-    items: items.filter((item) => item !== null),
+    items,
   }));
 }
 
