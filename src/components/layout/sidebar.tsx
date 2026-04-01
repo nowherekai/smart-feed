@@ -3,12 +3,9 @@
 import { FileText, LayoutDashboard, Rss, Settings, Zap } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
-import { useFeedStore } from "@/lib/store";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const mockMode = useFeedStore((state) => state.mockMode);
 
   return (
     <aside className="w-64 border-r border-border flex flex-col bg-background h-screen sticky top-0">
@@ -26,16 +23,7 @@ export function Sidebar() {
         <NavItem icon={<Settings size={20} />} label="Settings" href="/settings" active={pathname === "/settings"} />
       </nav>
 
-      <div className="p-4 border-t border-border">
-        {mockMode && (
-          <Badge
-            variant="secondary"
-            className="w-full justify-center py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200"
-          >
-            🎭 Demo Mode Active
-          </Badge>
-        )}
-      </div>
+      <div className="p-4 border-t border-border">{/* Mock mode badge removed */}</div>
     </aside>
   );
 }
