@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { getDb, sourceImportRunItems, sourceImportRuns } from "../db";
 import { type ParsedOpmlSource, parseOpml } from "../parsers";
 import { buildSourceFetchDeduplicationId, getQueueForTask, smartFeedTaskNames } from "../queue";
-import { logger } from "../utils";
+import { logger, sanitizeUrlForLogging } from "../utils";
 import type { SourceFetchJobData } from "./content";
 import {
   createSource,
@@ -163,13 +163,15 @@ async function processSingleUrl(
   inputUrl: string,
   deps: Required<SourceImportDeps>,
 ): Promise<SourceImportItemOutcome> {
-  logger.info("Processing single URL import", { inputUrl, importRunId });
+  const safeInputUrlToLog = sanitizeUrlForLogging(inputUrl);
+  logger.info("Processing single URL import", { inputUrl: safeInputUrlToLog, importRunId });
 
   try {
     const preparedSource = await deps.verifyRssSource(inputUrl);
+    const safeNormalizedUrlToLog = sanitizeUrlForLogging(preparedSource.normalizedUrl);
     logger.info("URL verified and prepared", {
-      inputUrl,
-      normalizedUrl: preparedSource.normalizedUrl,
+      inputUrl: safeInputUrlToLog,
+      normalizedUrl: safeNormalizedUrlToLog,
       title: preparedSource.title,
     });
 
@@ -177,7 +179,7 @@ async function processSingleUrl(
 
     if (existingSource) {
       logger.info("Source already exists, skipping creation", {
-        normalizedUrl: preparedSource.normalizedUrl,
+        normalizedUrl: safeNormalizedUrlToLog,
         sourceId: existingSource.id,
       });
       return {
@@ -201,7 +203,7 @@ async function processSingleUrl(
 
     logger.info("Source created successfully", {
       sourceId: createdSource.id,
-      identifier: preparedSource.normalizedUrl,
+      identifier: safeNormalizedUrlToLog,
     });
 
     // 成功创建后，立即触发首次抓取
@@ -224,7 +226,7 @@ async function processSingleUrl(
     const errorMessage = toFailureMessage(error);
     logger.warn("source import item failed", {
       error: errorMessage,
-      inputUrl,
+      inputUrl: safeInputUrlToLog,
       importRunId,
     });
 
@@ -356,7 +358,7 @@ export async function runSourceImport(
 
     // 串行执行每一条 URL 的导入
     for (const [index, url] of urls.entries()) {
-      logger.info(`Importing OPML item ${index + 1}/${urls.length}`, { url });
+      logger.info(`Importing OPML item ${index + 1}/${urls.length}`, { url: sanitizeUrlForLogging(url) });
       const outcome = await processSingleUrl(run.id, url, deps);
       outcomes.push(outcome);
       await persistOutcome(run.id, outcome, deps);
