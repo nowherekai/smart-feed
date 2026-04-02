@@ -61,14 +61,36 @@ function normalizeOptionalString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-/** 仅解码 XML 5 个内置实体，避免依赖通用实体展开。 */
+const XML_NAMED_ENTITIES: Readonly<Record<string, string>> = {
+  amp: "&",
+  apos: "'",
+  gt: ">",
+  lt: "<",
+  quot: '"',
+};
+
+function isValidUnicodeCodePoint(codePoint: number): boolean {
+  return codePoint >= 0 && codePoint <= 0x10ffff && (codePoint < 0xd800 || codePoint > 0xdfff);
+}
+
+function decodeXmlNumericEntity(match: string, codePointText: string, radix: number): string {
+  const codePoint = Number.parseInt(codePointText, radix);
+
+  if (!Number.isSafeInteger(codePoint) || !isValidUnicodeCodePoint(codePoint)) {
+    return match;
+  }
+
+  return String.fromCodePoint(codePoint);
+}
+
+/** 仅解码 feed metadata 中常见的命名实体和数字实体，避免依赖通用实体展开。 */
 function decodeBasicXmlEntities(value: string): string {
   return value
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'")
-    .replaceAll("&amp;", "&");
+    .replaceAll(/&(?:amp|apos|gt|lt|quot);/g, (entity) => XML_NAMED_ENTITIES[entity.slice(1, -1)] ?? entity)
+    .replaceAll(/&#([0-9]+);/g, (match, codePointText: string) => decodeXmlNumericEntity(match, codePointText, 10))
+    .replaceAll(/&#x([0-9a-fA-F]+);/g, (match, codePointText: string) =>
+      decodeXmlNumericEntity(match, codePointText, 16),
+    );
 }
 
 function normalizeOptionalXmlText(value: unknown): string | null {

@@ -62,3 +62,38 @@ test("verifyAndPrepareRssSource accepts feeds with entity expansions above defau
   expect(prepared.title).toBe(`${"&".repeat(1_500)}Example Feed`);
   expect(prepared.siteUrl).toBe("https://example.com?a=1&b=2");
 });
+
+test("verifyAndPrepareRssSource decodes decimal and hexadecimal XML numeric entities in feed metadata", async () => {
+  const prepared = await verifyAndPrepareRssSource("https://example.com/feed.xml", {
+    fetch: async () =>
+      new Response(
+        `<?xml version="1.0" encoding="UTF-8"?>
+         <rss version="2.0">
+           <channel>
+             <title>AT&#38;T &#x1F680;</title>
+             <link>https://example.com?a=1&#38;b=2</link>
+           </channel>
+         </rss>`,
+      ),
+  });
+
+  expect(prepared.title).toBe("AT&T 🚀");
+  expect(prepared.siteUrl).toBe("https://example.com?a=1&b=2");
+});
+
+test("verifyAndPrepareRssSource keeps malformed XML numeric entities unchanged", async () => {
+  const prepared = await verifyAndPrepareRssSource("https://example.com/feed.xml", {
+    fetch: async () =>
+      new Response(
+        `<?xml version="1.0" encoding="UTF-8"?>
+         <rss version="2.0">
+           <channel>
+             <title>Bad &#x110000; Entity &#9999999999999999999999;</title>
+             <link>https://example.com</link>
+           </channel>
+         </rss>`,
+      ),
+  });
+
+  expect(prepared.title).toBe("Bad &#x110000; Entity &#9999999999999999999999;");
+});
