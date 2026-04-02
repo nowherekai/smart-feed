@@ -14,6 +14,7 @@ const feedParser = new XMLParser({
   attributeNamePrefix: "",
   ignoreAttributes: false,
   parseTagValue: false,
+  processEntities: false,
   trimValues: true,
 });
 
@@ -60,6 +61,43 @@ function normalizeOptionalString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+const XML_NAMED_ENTITIES: Readonly<Record<string, string>> = {
+  amp: "&",
+  apos: "'",
+  gt: ">",
+  lt: "<",
+  quot: '"',
+};
+
+function isValidUnicodeCodePoint(codePoint: number): boolean {
+  return codePoint >= 0 && codePoint <= 0x10ffff && (codePoint < 0xd800 || codePoint > 0xdfff);
+}
+
+function decodeXmlNumericEntity(match: string, codePointText: string, radix: number): string {
+  const codePoint = Number.parseInt(codePointText, radix);
+
+  if (!Number.isSafeInteger(codePoint) || !isValidUnicodeCodePoint(codePoint)) {
+    return match;
+  }
+
+  return String.fromCodePoint(codePoint);
+}
+
+/** 仅解码 feed metadata 中常见的命名实体和数字实体，避免依赖通用实体展开。 */
+function decodeBasicXmlEntities(value: string): string {
+  return value
+    .replaceAll(/&(?:amp|apos|gt|lt|quot);/g, (entity) => XML_NAMED_ENTITIES[entity.slice(1, -1)] ?? entity)
+    .replaceAll(/&#([0-9]+);/g, (match, codePointText: string) => decodeXmlNumericEntity(match, codePointText, 10))
+    .replaceAll(/&#x([0-9a-fA-F]+);/g, (match, codePointText: string) =>
+      decodeXmlNumericEntity(match, codePointText, 16),
+    );
+}
+
+function normalizeOptionalXmlText(value: unknown): string | null {
+  const normalized = normalizeOptionalString(value);
+  return normalized ? decodeBasicXmlEntities(normalized) : null;
+}
+
 /**
  * 从原始 XML 中提取 Feed 元数据 (标题、站点链接)
  * 支持 RSS 2.0, Atom 1.0, 和 RDF/RSS 1.0
@@ -79,8 +117,8 @@ function extractFeedMetadata(xml: string): FeedMetadata {
 
   if (rssChannel) {
     return {
-      title: normalizeOptionalString(rssChannel.title),
-      siteUrl: normalizeOptionalString(rssChannel.link),
+      title: normalizeOptionalXmlText(rssChannel.title),
+      siteUrl: normalizeOptionalXmlText(rssChannel.link),
     };
   }
 
@@ -94,9 +132,9 @@ function extractFeedMetadata(xml: string): FeedMetadata {
     return {
       title:
         typeof atomFeed.title === "string"
-          ? normalizeOptionalString(atomFeed.title)
-          : normalizeOptionalString(atomFeed.title?.["#text"]),
-      siteUrl: normalizeOptionalString(alternateLink?.href),
+          ? normalizeOptionalXmlText(atomFeed.title)
+          : normalizeOptionalXmlText(atomFeed.title?.["#text"]),
+      siteUrl: normalizeOptionalXmlText(alternateLink?.href),
     };
   }
 
