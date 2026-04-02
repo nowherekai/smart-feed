@@ -9,7 +9,13 @@ import { generateObject } from "ai";
 import type { ZodType } from "zod";
 
 import { type AppEnv, getAppEnv } from "../config";
-import { type AiPromptInput, type AiPromptVersion, type EnabledAiRuntimeState, getPromptDefinition } from "./prompts";
+import { createLogger } from "../utils";
+import {
+  type AiPromptInput,
+  type AiPromptVersion,
+  type EnabledAiRuntimeState,
+  getPromptDefinition,
+} from "./prompts";
 import type { BasicAnalysis, HeavySummary } from "./schemas";
 
 /** AI 运行时状态联合类型 */
@@ -19,7 +25,11 @@ type AiTaskKind = "basic" | "heavy";
 /** AI 客户端所需的配置子集 */
 type AiClientEnv = Pick<
   AppEnv,
-  "aiBasicModel" | "aiHeavyModel" | "aiProvider" | "openRouterApiKey" | "openRouterBaseUrl"
+  | "aiBasicModel"
+  | "aiHeavyModel"
+  | "aiProvider"
+  | "openRouterApiKey"
+  | "openRouterBaseUrl"
 >;
 
 /** 结构化对象生成函数类型 */
@@ -33,7 +43,11 @@ type GenerateStructuredObject = <TOutput>(input: {
 }) => Promise<{ object: TOutput }>;
 
 /** OpenRouter 服务商工厂函数类型 */
-type OpenRouterProviderFactory = (config: { apiKey: string; baseURL: string; name: "openrouter" }) => {
+type OpenRouterProviderFactory = (config: {
+  apiKey: string;
+  baseURL: string;
+  name: "openrouter";
+}) => {
   chat: (modelId: string) => unknown;
 };
 
@@ -68,6 +82,10 @@ type StructuredPromptDefinition<TOutput> = {
   schemaName: string;
 };
 
+const logger = createLogger("AiClient");
+
+type JsonRecord = Record<string, unknown>;
+
 // --- 错误定义 ---
 
 /** AI 提供商未配置错误 */
@@ -92,6 +110,332 @@ class AiConfigurationError extends Error {
   }
 }
 
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getFirstDefinedValue(
+  record: JsonRecord,
+  aliases: readonly string[],
+): unknown {
+  for (const alias of aliases) {
+    if (Object.hasOwn(record, alias)) {
+      return record[alias];
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeStringArray(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) {
+    const normalized = value
+      .map((item) => normalizeString(item))
+      .filter((item): item is string => item !== undefined);
+
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  const singleValue = normalizeString(value);
+
+  if (singleValue === undefined) {
+    return undefined;
+  }
+
+  const normalized = singleValue
+    .split(/[\n,，、;；]+/u)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizePoints(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) {
+    const normalized = value
+      .map((item) => normalizeString(item))
+      .filter((item): item is string => item !== undefined);
+
+    return normalized.length > 0 ? normalized.slice(0, 3) : undefined;
+  }
+
+  const singleValue = normalizeString(value);
+
+  if (singleValue === undefined) {
+    return undefined;
+  }
+
+  const normalized = singleValue
+    .split(/\n+|^[-*•]\s*|[；;]+/mu)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  return normalized.length > 0 ? normalized.slice(0, 3) : undefined;
+}
+
+function normalizeLanguage(value: unknown): string | undefined {
+  const normalized = normalizeString(value)?.toLowerCase();
+
+  if (normalized === undefined) {
+    return undefined;
+  }
+
+  if (
+    normalized === "zh" ||
+    normalized === "zh-cn" ||
+    normalized === "zh_hans" ||
+    normalized === "cn" ||
+    normalized.includes("中文") ||
+    normalized.includes("汉语") ||
+    normalized.includes("chinese")
+  ) {
+    return "zh";
+  }
+
+  if (
+    normalized === "en" ||
+    normalized === "en-us" ||
+    normalized.includes("英文") ||
+    normalized.includes("英语") ||
+    normalized.includes("english")
+  ) {
+    return "en";
+  }
+
+  return normalized;
+}
+
+function normalizeSentiment(
+  value: unknown,
+): BasicAnalysis["sentiment"] | undefined {
+  const normalized = normalizeString(value)?.toLowerCase();
+
+  if (normalized === undefined) {
+    return undefined;
+  }
+
+  if (
+    normalized === "positive" ||
+    normalized.includes("积极") ||
+    normalized.includes("正面")
+  ) {
+    return "positive";
+  }
+
+  if (
+    normalized === "neutral" ||
+    normalized.includes("中性") ||
+    normalized.includes("客观")
+  ) {
+    return "neutral";
+  }
+
+  if (
+    normalized === "negative" ||
+    normalized.includes("消极") ||
+    normalized.includes("负面")
+  ) {
+    return "negative";
+  }
+
+  if (
+    normalized === "mixed" ||
+    normalized.includes("混合") ||
+    normalized.includes("复杂")
+  ) {
+    return "mixed";
+  }
+
+  return undefined;
+}
+
+function normalizeValueScoreNumber(value: number): number | undefined {
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+
+  let normalized = value;
+
+  if (normalized >= 0 && normalized <= 1) {
+    normalized *= 10;
+  } else if (normalized > 10 && normalized <= 100) {
+    normalized /= 10;
+  }
+
+  const rounded = Math.round(normalized);
+
+  if (rounded < 0 || rounded > 10) {
+    return undefined;
+  }
+
+  return rounded;
+}
+
+function normalizeValueScore(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return normalizeValueScoreNumber(value);
+  }
+
+  const normalized = normalizeString(value);
+
+  if (normalized === undefined) {
+    return undefined;
+  }
+
+  const outOfTenMatch = normalized.match(/-?\d+(?:\.\d+)?(?=\s*\/\s*10)/u);
+
+  if (outOfTenMatch?.[0] !== undefined) {
+    return normalizeValueScoreNumber(Number.parseFloat(outOfTenMatch[0]));
+  }
+
+  const numericMatch = normalized.match(/-?\d+(?:\.\d+)?/u);
+
+  if (numericMatch?.[0] !== undefined) {
+    return normalizeValueScoreNumber(Number.parseFloat(numericMatch[0]));
+  }
+
+  return undefined;
+}
+
+function extractJsonTextCandidate(text: string): string | null {
+  const trimmed = text.trim();
+  const codeFenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
+  const candidate = codeFenceMatch?.[1] ?? trimmed;
+  const firstBraceIndex = candidate.indexOf("{");
+  const lastBraceIndex = candidate.lastIndexOf("}");
+
+  if (firstBraceIndex === -1 || lastBraceIndex <= firstBraceIndex) {
+    return null;
+  }
+
+  return candidate.slice(firstBraceIndex, lastBraceIndex + 1);
+}
+
+function parseJsonTextCandidate(text: string): unknown | null {
+  const candidate = extractJsonTextCandidate(text);
+
+  if (candidate === null) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeBasicAnalysisCandidate(
+  value: unknown,
+): Partial<BasicAnalysis> | null {
+  if (!isJsonRecord(value)) {
+    return null;
+  }
+
+  return {
+    categories: normalizeStringArray(
+      getFirstDefinedValue(value, ["categories", "分类"]),
+    ),
+    keywords: normalizeStringArray(
+      getFirstDefinedValue(value, ["keywords", "关键词"]),
+    ),
+    entities: normalizeStringArray(
+      getFirstDefinedValue(value, ["entities", "实体"]),
+    ),
+    language: normalizeLanguage(
+      getFirstDefinedValue(value, ["language", "语言"]),
+    ),
+    sentiment: normalizeSentiment(
+      getFirstDefinedValue(value, ["sentiment", "情绪"]),
+    ),
+    valueScore: normalizeValueScore(
+      getFirstDefinedValue(value, ["valueScore", "价值分"]),
+    ),
+  };
+}
+
+function normalizeHeavySummaryCandidate(
+  value: unknown,
+): Partial<HeavySummary> | null {
+  if (!isJsonRecord(value)) {
+    return null;
+  }
+
+  return {
+    oneline: normalizeString(
+      getFirstDefinedValue(value, [
+        "oneline",
+        "一句话总结",
+        "单行总结",
+        "总结",
+      ]),
+    ),
+    points: normalizePoints(
+      getFirstDefinedValue(value, ["points", "要点", "关键要点", "要点列表"]),
+    ),
+    reason: normalizeString(
+      getFirstDefinedValue(value, ["reason", "关注理由", "推荐理由", "理由"]),
+    ),
+    evidenceSnippet: normalizeString(
+      getFirstDefinedValue(value, [
+        "evidenceSnippet",
+        "证据片段",
+        "证据",
+        "引用片段",
+      ]),
+    ),
+  };
+}
+
+function buildRepairedObject(
+  schemaName: string,
+  value: unknown,
+): JsonRecord | null {
+  if (schemaName === "basic_analysis") {
+    return normalizeBasicAnalysisCandidate(value) as JsonRecord | null;
+  }
+
+  if (schemaName === "heavy_summary") {
+    return normalizeHeavySummaryCandidate(value) as JsonRecord | null;
+  }
+
+  return null;
+}
+
+function tryRepairStructuredObjectText<TOutput>(options: {
+  schema: ZodType<TOutput>;
+  schemaName: string;
+  text: string;
+}): TOutput | null {
+  const parsedCandidate = parseJsonTextCandidate(options.text);
+
+  if (parsedCandidate === null) {
+    return null;
+  }
+
+  const repairedCandidate = buildRepairedObject(
+    options.schemaName,
+    parsedCandidate,
+  );
+
+  if (repairedCandidate === null) {
+    return null;
+  }
+
+  const parseResult = options.schema.safeParse(repairedCandidate);
+
+  return parseResult.success ? parseResult.data : null;
+}
+
 // --- 默认实现 ---
 
 /** 使用 Vercel AI SDK 的 generateObject 实现结构化输出 */
@@ -103,7 +447,32 @@ const defaultGenerateStructuredObject: GenerateStructuredObject = async ({
   schemaName,
   system,
 }) => {
+  logger.debug(`defaultGenerateStructuredObject`);
+  let repairApplied = false;
+  let repairErrorMessage: string | null = null;
   const result = await generateObject({
+    experimental_repairText: async ({ error, text }) => {
+      const repairedObject = tryRepairStructuredObjectText({
+        schema,
+        schemaName,
+        text,
+      });
+
+      if (repairedObject === null) {
+        repairErrorMessage =
+          error instanceof Error ? error.message : String(error);
+        return null;
+      }
+
+      repairApplied = true;
+      logger.warn("Structured AI output repaired before schema validation", {
+        repairError: error instanceof Error ? error.message : String(error),
+        repairedKeys: Object.keys(repairedObject as JsonRecord),
+        schemaName,
+      });
+
+      return JSON.stringify(repairedObject);
+    },
     model: model as Parameters<typeof generateObject>[0]["model"],
     prompt,
     schema,
@@ -111,6 +480,13 @@ const defaultGenerateStructuredObject: GenerateStructuredObject = async ({
     schemaName,
     system,
   });
+
+  if (!repairApplied && repairErrorMessage !== null) {
+    logger.warn("Structured AI output could not be repaired", {
+      repairError: repairErrorMessage,
+      schemaName,
+    });
+  }
 
   return {
     object: result.object,
@@ -144,7 +520,9 @@ function collectCandidatePhrases(input: AiPromptInput): string[] {
 }
 
 function truncateText(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
+  return value.length <= maxLength
+    ? value
+    : `${value.slice(0, maxLength - 1)}…`;
 }
 
 /** 启发式：推断语种 */
@@ -182,8 +560,14 @@ function inferCategories(text: string): BasicAnalysis["categories"] {
 
 /** 启发式：推断关键词 */
 function inferKeywords(text: string): string[] {
-  const englishTokens = Array.from(text.toLowerCase().matchAll(/\b[a-z][a-z0-9-]{3,}\b/g), (match) => match[0]);
-  const chineseTokens = Array.from(text.matchAll(/[\u4e00-\u9fff]{2,6}/gu), (match) => match[0]);
+  const englishTokens = Array.from(
+    text.toLowerCase().matchAll(/\b[a-z][a-z0-9-]{3,}\b/g),
+    (match) => match[0],
+  );
+  const chineseTokens = Array.from(
+    text.matchAll(/[\u4e00-\u9fff]{2,6}/gu),
+    (match) => match[0],
+  );
   const keywords = [...englishTokens, ...chineseTokens]
     .map((token) => token.trim())
     .filter((token, index, list) => list.indexOf(token) === index);
@@ -271,7 +655,10 @@ function buildDummyHeavySummary(input: AiPromptInput): HeavySummary {
   const evidenceSnippet = truncateText(phrases[0] ?? input.title, 180);
   const points = phrases.slice(0, 3).map((phrase) => truncateText(phrase, 90));
   const categories = inferCategories(`${input.title}\n${input.cleanedMd}`);
-  const valueScore = inferValueScore(`${input.title}\n${input.cleanedMd}`, categories);
+  const valueScore = inferValueScore(
+    `${input.title}\n${input.cleanedMd}`,
+    categories,
+  );
 
   return {
     evidenceSnippet,
@@ -287,8 +674,13 @@ function resolveModelId(kind: AiTaskKind, env: AiClientEnv): string {
   const modelId = kind === "basic" ? env.aiBasicModel : env.aiHeavyModel;
 
   if (modelId === null) {
-    const envKey = kind === "basic" ? "SMART_FEED_AI_BASIC_MODEL" : "SMART_FEED_AI_HEAVY_MODEL";
-    throw new AiConfigurationError(`[ai/client] SMART_FEED_AI_PROVIDER=openrouter requires ${envKey}.`);
+    const envKey =
+      kind === "basic"
+        ? "SMART_FEED_AI_BASIC_MODEL"
+        : "SMART_FEED_AI_HEAVY_MODEL";
+    throw new AiConfigurationError(
+      `[ai/client] SMART_FEED_AI_PROVIDER=openrouter requires ${envKey}.`,
+    );
   }
 
   return modelId;
@@ -296,7 +688,9 @@ function resolveModelId(kind: AiTaskKind, env: AiClientEnv): string {
 
 function resolveOpenRouterApiKey(env: AiClientEnv): string {
   if (env.openRouterApiKey === null) {
-    throw new AiConfigurationError("[ai/client] SMART_FEED_AI_PROVIDER=openrouter requires OPENROUTER_API_KEY.");
+    throw new AiConfigurationError(
+      "[ai/client] SMART_FEED_AI_PROVIDER=openrouter requires OPENROUTER_API_KEY.",
+    );
   }
 
   return env.openRouterApiKey;
@@ -306,39 +700,96 @@ function getRuntimeStateFromEnv(env: AiClientEnv): AiRuntimeState {
   return env.aiProvider ?? "disabled";
 }
 
+function summarizeAiInput(input: AiPromptInput) {
+  return {
+    cleanedMdLength: input.cleanedMd.length,
+    originalUrlHost: (() => {
+      try {
+        return new URL(input.originalUrl).host;
+      } catch {
+        return null;
+      }
+    })(),
+    sourceName: input.sourceName,
+    titleLength: input.title.length,
+  };
+}
+
 /**
  * 将环境变量和任务类型解析为最终的 AI 任务配置
  */
-function resolveTaskConfig(kind: AiTaskKind, env: AiClientEnv): ResolvedAiTaskConfig {
+function resolveTaskConfig(
+  kind: AiTaskKind,
+  env: AiClientEnv,
+): ResolvedAiTaskConfig {
   const promptDefinition =
-    kind === "basic" ? getPromptDefinition("basic-analysis-v1") : getPromptDefinition("heavy-summary-v1");
+    kind === "basic"
+      ? getPromptDefinition("basic-analysis-v1")
+      : getPromptDefinition("heavy-summary-v1");
   const promptVersion = promptDefinition.promptVersion;
   const runtimeState = getRuntimeStateFromEnv(env);
 
   if (runtimeState === "disabled") {
-    return { baseURL: null, modelId: null, modelStrategy: null, promptVersion, runtimeState };
+    const config = {
+      baseURL: null,
+      modelId: null,
+      modelStrategy: null,
+      promptVersion,
+      runtimeState,
+    };
+
+    logger.debug("AI task config resolved", {
+      kind,
+      modelId: config.modelId,
+      modelStrategy: config.modelStrategy,
+      promptVersion: config.promptVersion,
+      runtimeState: config.runtimeState,
+    });
+
+    return config;
   }
 
   if (runtimeState === "dummy") {
-    return {
+    const config = {
       baseURL: null,
       modelId: "dummy",
       modelStrategy: promptDefinition.getModelStrategy(runtimeState),
       promptVersion,
       runtimeState,
     };
+
+    logger.debug("AI task config resolved", {
+      kind,
+      modelId: config.modelId,
+      modelStrategy: config.modelStrategy,
+      promptVersion: config.promptVersion,
+      runtimeState: config.runtimeState,
+    });
+
+    return config;
   }
 
   // 校验 API Key
   resolveOpenRouterApiKey(env);
 
-  return {
+  const config = {
     baseURL: env.openRouterBaseUrl,
     modelId: resolveModelId(kind, env),
     modelStrategy: promptDefinition.getModelStrategy(runtimeState),
     promptVersion,
     runtimeState,
   };
+
+  logger.debug("AI task config resolved", {
+    baseURL: config.baseURL,
+    kind,
+    modelId: config.modelId,
+    modelStrategy: config.modelStrategy,
+    promptVersion: config.promptVersion,
+    runtimeState: config.runtimeState,
+  });
+
+  return config;
 }
 
 /**
@@ -346,9 +797,12 @@ function resolveTaskConfig(kind: AiTaskKind, env: AiClientEnv): ResolvedAiTaskCo
  */
 function createAiClient(deps: AiClientDeps = {}) {
   const env = deps.env ?? getAppEnv();
-  const generateStructuredObject = deps.generateStructuredObject ?? defaultGenerateStructuredObject;
-  const openRouterProviderFactory = deps.openRouterProviderFactory ?? defaultOpenRouterProviderFactory;
-  let cachedOpenRouterProvider: ReturnType<OpenRouterProviderFactory> | null = null;
+  const generateStructuredObject =
+    deps.generateStructuredObject ?? defaultGenerateStructuredObject;
+  const openRouterProviderFactory =
+    deps.openRouterProviderFactory ?? defaultOpenRouterProviderFactory;
+  let cachedOpenRouterProvider: ReturnType<OpenRouterProviderFactory> | null =
+    null;
 
   function getAiRuntimeState(): AiRuntimeState {
     return getRuntimeStateFromEnv(env);
@@ -358,6 +812,7 @@ function createAiClient(deps: AiClientDeps = {}) {
     const runtimeState = getAiRuntimeState();
 
     if (runtimeState === "disabled") {
+      logger.warn("AI provider is unavailable", { runtimeState });
       throw new AiProviderUnavailableError();
     }
 
@@ -365,11 +820,17 @@ function createAiClient(deps: AiClientDeps = {}) {
   }
 
   function getOpenRouterProvider(): ReturnType<OpenRouterProviderFactory> {
-    cachedOpenRouterProvider ??= openRouterProviderFactory({
-      apiKey: resolveOpenRouterApiKey(env),
-      baseURL: env.openRouterBaseUrl,
-      name: "openrouter",
-    });
+    if (cachedOpenRouterProvider === null) {
+      logger.info("Initializing OpenRouter provider", {
+        baseURL: env.openRouterBaseUrl,
+      });
+
+      cachedOpenRouterProvider = openRouterProviderFactory({
+        apiKey: resolveOpenRouterApiKey(env),
+        baseURL: env.openRouterBaseUrl,
+        name: "openrouter",
+      });
+    }
 
     return cachedOpenRouterProvider;
   }
@@ -384,24 +845,67 @@ function createAiClient(deps: AiClientDeps = {}) {
     const { buildDummyOutput, input, kind, promptDefinition } = options;
     const runtimeState = assertAiAvailable();
 
+    logger.info("AI prompt execution started", {
+      kind,
+      runtimeState,
+      schemaName: promptDefinition.schemaName,
+      ...summarizeAiInput(input),
+    });
+
     // 如果是 Dummy 模式，直接基于规则生成假数据并校验
     if (runtimeState === "dummy") {
-      return promptDefinition.schema.parse(buildDummyOutput(input));
+      const output = promptDefinition.schema.parse(buildDummyOutput(input));
+
+      logger.info("AI prompt execution completed with dummy provider", {
+        kind,
+        runtimeState,
+        schemaName: promptDefinition.schemaName,
+      });
+
+      return output;
     }
 
     // 否则调用真实 AI 模型
     const provider = getOpenRouterProvider();
     const messages = promptDefinition.buildMessages(input);
-    const result = await generateStructuredObject({
-      model: provider.chat(resolveModelId(kind, env)),
-      prompt: messages.prompt,
-      schema: promptDefinition.schema,
-      schemaDescription: promptDefinition.schemaDescription,
+    const modelId = resolveModelId(kind, env);
+
+    logger.info("Calling structured AI generation", {
+      kind,
+      modelId,
+      runtimeState,
       schemaName: promptDefinition.schemaName,
-      system: messages.system,
     });
 
-    return promptDefinition.schema.parse(result.object);
+    try {
+      const result = await generateStructuredObject({
+        model: provider.chat(modelId),
+        prompt: messages.prompt,
+        schema: promptDefinition.schema,
+        schemaDescription: promptDefinition.schemaDescription,
+        schemaName: promptDefinition.schemaName,
+        system: messages.system,
+      });
+      const output = promptDefinition.schema.parse(result.object);
+
+      logger.info("AI prompt execution completed", {
+        kind,
+        modelId,
+        runtimeState,
+        schemaName: promptDefinition.schemaName,
+      });
+
+      return output;
+    } catch (error) {
+      logger.error("AI prompt execution failed", {
+        error: error instanceof Error ? error.message : String(error),
+        kind,
+        modelId,
+        runtimeState,
+        schemaName: promptDefinition.schemaName,
+      });
+      throw error;
+    }
   }
 
   return {
@@ -412,6 +916,7 @@ function createAiClient(deps: AiClientDeps = {}) {
     },
     /** 执行基础分析 */
     async runBasicAnalysis(input: AiPromptInput): Promise<BasicAnalysis> {
+      logger.info(`runBasicAnalysis: ${input.sourceName}:${input.originalUrl}`);
       return runStructuredPrompt({
         buildDummyOutput: buildDummyBasicAnalysis,
         input,
@@ -444,7 +949,10 @@ function assertAiAvailable(): EnabledAiRuntimeState {
   return aiClient.assertAiAvailable();
 }
 
-function resolveAiTaskConfig(kind: AiTaskKind, env: AiClientEnv = getAppEnv()): ResolvedAiTaskConfig {
+function resolveAiTaskConfig(
+  kind: AiTaskKind,
+  env: AiClientEnv = getAppEnv(),
+): ResolvedAiTaskConfig {
   return resolveTaskConfig(kind, env);
 }
 
@@ -474,4 +982,5 @@ export {
   resolveAiTaskConfig,
   runBasicAnalysis,
   runHeavySummary,
+  tryRepairStructuredObjectText,
 };

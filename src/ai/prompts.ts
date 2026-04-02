@@ -82,9 +82,15 @@ const PROMPTS: PromptRegistry = {
     },
     buildMessages(input) {
       return {
-        system: "你是 smart-feed 的内容分析器。请只基于给定内容输出结构化 JSON，不要补充正文中不存在的事实。",
+        system:
+          "你是 smart-feed 的内容分析器。请只基于给定内容输出 JSON 对象，不要输出 markdown、代码块、解释或 reasoning，也不要补充正文中不存在的事实。",
         prompt: [
-          "请分析下面的文章，输出分类、关键词、实体、语言、情绪和 0-10 的价值分。",
+          "请分析下面的文章，并且只输出一个 JSON 对象。",
+          "JSON key 必须严格使用以下英文字段名：categories、keywords、entities、language、sentiment、valueScore。",
+          "categories、keywords、entities 必须是字符串数组。",
+          'language 只能输出 "zh" 或 "en"。',
+          'sentiment 只能输出 "positive"、"neutral"、"negative"、"mixed" 之一。',
+          "valueScore 必须输出 0-10 的整数，不能输出小数、百分制，也不能输出中文描述。",
           "价值分用于决定是否进入后续深度摘要。",
           buildContentPrompt(input),
         ].join("\n\n"),
@@ -103,9 +109,13 @@ const PROMPTS: PromptRegistry = {
     },
     buildMessages(input) {
       return {
-        system: "你是 smart-feed 的摘要生成器。请只基于给定内容输出结构化 JSON，证据片段必须直接摘自正文。",
+        system:
+          "你是 smart-feed 的摘要生成器。请只基于给定内容输出 JSON 对象，不要输出 markdown、代码块、解释或 reasoning。证据片段必须直接摘自正文。",
         prompt: [
           "请生成一句话总结、最多三条要点、关注理由，以及一段可直接追溯到正文的证据片段。",
+          "JSON key 必须严格使用以下英文字段名：oneline、points、reason、evidenceSnippet。",
+          "oneline、reason、evidenceSnippet 必须是非空字符串。",
+          "points 必须是 1-3 条字符串数组，不能输出对象，也不能输出中文 key。",
           buildContentPrompt(input),
         ].join("\n\n"),
       };

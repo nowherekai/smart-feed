@@ -1,6 +1,13 @@
 import { expect, test } from "bun:test";
 import type { ZodType } from "zod";
-import { AiConfigurationError, AiProviderUnavailableError, createAiClient, resolveAiTaskConfig } from "./client";
+import {
+  AiConfigurationError,
+  AiProviderUnavailableError,
+  createAiClient,
+  resolveAiTaskConfig,
+  tryRepairStructuredObjectText,
+} from "./client";
+import { BasicAnalysisSchema, HeavySummarySchema } from "./schemas";
 
 const baseInput = {
   cleanedMd: "AI 平台发布了新的模型评测结果，并讨论了部署成本、架构约束和后续路线图。",
@@ -219,4 +226,52 @@ test("openrouter mode can generate heavy summary via injected structured generat
   expect(result.points).toHaveLength(3);
   expect(result.evidenceSnippet).toContain("模型评测结果");
   expect(providerFactoryCallCount).toBe(1);
+});
+
+test("repair helper can normalize localized basic analysis keys and values", () => {
+  const repaired = tryRepairStructuredObjectText({
+    schema: BasicAnalysisSchema,
+    schemaName: "basic_analysis",
+    text: JSON.stringify({
+      分类: ["技术测试", "AI 集成"],
+      关键词: ["smart-feed", "结构化输出"],
+      实体: ["smart-feed", "AI Smoke Test"],
+      语言: "中文",
+      情绪: "中性",
+      价值分: 0.65,
+    }),
+  });
+
+  expect(repaired).toEqual({
+    categories: ["技术测试", "AI 集成"],
+    keywords: ["smart-feed", "结构化输出"],
+    entities: ["smart-feed", "AI Smoke Test"],
+    language: "zh",
+    sentiment: "neutral",
+    valueScore: 7,
+  });
+});
+
+test("repair helper can normalize heavy summary code-fenced payload", () => {
+  const repaired = tryRepairStructuredObjectText({
+    schema: HeavySummarySchema,
+    schemaName: "heavy_summary",
+    text: [
+      "```json",
+      JSON.stringify({
+        一句话总结: "这是一个摘要",
+        要点: ["第一点", "第二点"],
+        关注理由: "值得继续跟进。",
+        证据片段: "原文中的关键句子。",
+      }),
+      "```",
+    ].join("\n"),
+  });
+
+  expect(repaired).toEqual({
+    oneline: "这是一个摘要",
+    points: ["第一点", "第二点"],
+    reason: "值得继续跟进。",
+    evidenceSnippet: "原文中的关键句子。",
+  });
 });
