@@ -19,10 +19,11 @@ import {
 } from "../ai";
 import { type AppEnv, getAppEnv } from "../config";
 import { analysisRecords, contentItems, getDb, sources } from "../db";
+import { normalizeDebugVariantTag } from "../lib/debug-run";
 import { createCompletedStepResult, createFailedStepResult, type PipelineStepResult } from "../pipeline/types";
 import { smartFeedTaskNames } from "../queue";
 import { logger } from "../utils";
-import type { ContentAnalyzeBasicJobData, ContentAnalyzeHeavyJobData } from "./content";
+import type { ContentAnalysisDebugOptions, ContentAnalyzeBasicJobData, ContentAnalyzeHeavyJobData } from "./content";
 import { canEnterDigest } from "./traceability";
 
 // 类型定义
@@ -88,6 +89,7 @@ export type ContentAnalyzeBasicDeps = {
     sourceName: string;
     title: string;
   }) => Promise<BasicAnalysis>;
+  updateAnalysisRecord?: (id: string, data: Partial<Omit<NewAnalysisRecord, "id">>) => Promise<AnalysisRecord>;
   updateContentItem?: (contentId: string, data: ContentItemUpdate) => Promise<void>;
 };
 
@@ -107,6 +109,7 @@ export type ContentAnalyzeHeavyDeps = {
     sourceName: string;
     title: string;
   }) => Promise<HeavySummary>;
+  updateAnalysisRecord?: (id: string, data: Partial<Omit<NewAnalysisRecord, "id">>) => Promise<AnalysisRecord>;
   updateContentItem?: (contentId: string, data: ContentItemUpdate) => Promise<void>;
 };
 
@@ -244,6 +247,13 @@ async function createAnalysisRecord(data: NewAnalysisRecord): Promise<AnalysisRe
   return requireInsertedRow(record, "analysis record");
 }
 
+async function updateAnalysisRecord(id: string, data: Partial<Omit<NewAnalysisRecord, "id">>): Promise<AnalysisRecord> {
+  const db = getDb();
+  const [record] = await db.update(analysisRecords).set(data).where(eq(analysisRecords.id, id)).returning();
+
+  return requireInsertedRow(record, "analysis record");
+}
+
 async function updateContentItem(contentId: string, data: ContentItemUpdate): Promise<void> {
   if (Object.keys(data).length === 0) {
     return;
@@ -263,6 +273,7 @@ function buildBasicDeps(overrides: ContentAnalyzeBasicDeps): Required<ContentAna
     getContentForAnalysisById: overrides.getContentForAnalysisById ?? getContentForAnalysisById,
     resolveBasicTaskConfig: overrides.resolveBasicTaskConfig ?? (() => resolveAiTaskConfig("basic")),
     runBasicAnalysis: overrides.runBasicAnalysis ?? runBasicAnalysis,
+    updateAnalysisRecord: overrides.updateAnalysisRecord ?? updateAnalysisRecord,
     updateContentItem: overrides.updateContentItem ?? updateContentItem,
   };
 }
@@ -276,8 +287,64 @@ function buildHeavyDeps(overrides: ContentAnalyzeHeavyDeps): Required<ContentAna
     getContentForAnalysisById: overrides.getContentForAnalysisById ?? getContentForAnalysisById,
     resolveHeavyTaskConfig: overrides.resolveHeavyTaskConfig ?? (() => resolveAiTaskConfig("heavy")),
     runHeavySummary: overrides.runHeavySummary ?? runHeavySummary,
+    updateAnalysisRecord: overrides.updateAnalysisRecord ?? updateAnalysisRecord,
     updateContentItem: overrides.updateContentItem ?? updateContentItem,
   };
+}
+
+function buildEffectivePromptVersion(promptVersion: string, debugOptions?: ContentAnalysisDebugOptions): string {
+  if (!debugOptions) {
+    return promptVersion;
+  }
+
+  const suffixParts = [normalizeDebugVariantTag(debugOptions.variantTag)];
+
+  if (debugOptions.recordMode === "new-record" && debugOptions.rerunKey) {
+    suffixParts.push(debugOptions.rerunKey);
+  }
+
+  const suffix = suffixParts.filter((part) => Boolean(part)).join("-");
+
+  if (!suffix) {
+    return promptVersion;
+  }
+
+  const maxSuffixLength = 64 - promptVersion.length - 1;
+
+  if (maxSuffixLength <= 0) {
+    return promptVersion;
+  }
+
+  return `${promptVersion}~${suffix.slice(0, maxSuffixLength)}`;
+}
+
+function shouldBypassCache(debugOptions?: ContentAnalysisDebugOptions): boolean {
+  return debugOptions?.recordMode === "new-record" || debugOptions?.recordMode === "overwrite";
+}
+
+function buildHeavyJobData(contentId: string, debugOptions?: ContentAnalysisDebugOptions): ContentAnalyzeHeavyJobData {
+  return debugOptions
+    ? {
+        contentId,
+        debugOptions,
+        trigger: "content.analyze.basic",
+      }
+    : {
+        contentId,
+        trigger: "content.analyze.basic",
+      };
+}
+
+function shouldContinueToHeavy(thresholdExceeded: boolean, debugOptions?: ContentAnalysisDebugOptions): boolean {
+  if (!thresholdExceeded) {
+    return false;
+  }
+
+  if (!debugOptions) {
+    return true;
+  }
+
+  return debugOptions.continueToHeavy === true;
 }
 
 /**
@@ -341,15 +408,18 @@ export async function runContentAnalyzeBasic(
     });
   }
 
+  const effectivePromptVersion = buildEffectivePromptVersion(taskConfig.promptVersion, jobData.debugOptions);
+
   // 3. 缓存检查
   const cachedRecord = await deps.findAnalysisRecord(
     record.content.id,
     taskConfig.modelStrategy,
-    taskConfig.promptVersion,
+    effectivePromptVersion,
   );
 
-  if (cachedRecord) {
+  if (cachedRecord && !shouldBypassCache(jobData.debugOptions)) {
     const thresholdExceeded = cachedRecord.valueScore > deps.appEnv.valueScoreThreshold;
+    const shouldQueueHeavy = shouldContinueToHeavy(thresholdExceeded, jobData.debugOptions);
 
     if (!thresholdExceeded) {
       await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
@@ -359,9 +429,9 @@ export async function runContentAnalyzeBasic(
 
     return createCompletedStepResult<ContentAnalyzeBasicPayload, ContentAnalyzeHeavyJobData>({
       message: "content.analyze.basic cache hit",
-      nextStep: thresholdExceeded
+      nextStep: shouldQueueHeavy
         ? {
-            data: { contentId: record.content.id, trigger: "content.analyze.basic" },
+            data: buildHeavyJobData(record.content.id, jobData.debugOptions),
             jobName: smartFeedTaskNames.contentAnalyzeHeavy,
           }
         : null,
@@ -389,7 +459,7 @@ export async function runContentAnalyzeBasic(
     });
 
     // 5. 存储结果
-    const analysisRecord = await deps.createAnalysisRecord({
+    const analysisRecordData: NewAnalysisRecord = {
       categories: basicAnalysis.categories,
       contentId: record.content.id,
       contentTraceId: record.content.id,
@@ -399,7 +469,7 @@ export async function runContentAnalyzeBasic(
       language: basicAnalysis.language,
       modelStrategy: taskConfig.modelStrategy,
       originalUrl: record.content.originalUrl,
-      promptVersion: taskConfig.promptVersion,
+      promptVersion: effectivePromptVersion,
       sentiment: basicAnalysis.sentiment,
       sourceId: record.source.id,
       sourceName,
@@ -407,9 +477,17 @@ export async function runContentAnalyzeBasic(
       status: "basic",
       summary: null,
       valueScore: basicAnalysis.valueScore,
-    });
+    };
+    const analysisRecord =
+      cachedRecord && shouldBypassCache(jobData.debugOptions)
+        ? await deps.updateAnalysisRecord(cachedRecord.id, {
+            ...analysisRecordData,
+            createdAt: new Date(),
+          })
+        : await deps.createAnalysisRecord(analysisRecordData);
 
     const thresholdExceeded = basicAnalysis.valueScore > deps.appEnv.valueScoreThreshold;
+    const shouldQueueHeavy = shouldContinueToHeavy(thresholdExceeded, jobData.debugOptions);
 
     // 更新内容状态
     if (!thresholdExceeded) {
@@ -419,9 +497,9 @@ export async function runContentAnalyzeBasic(
     }
 
     return createCompletedStepResult<ContentAnalyzeBasicPayload, ContentAnalyzeHeavyJobData>({
-      nextStep: thresholdExceeded
+      nextStep: shouldQueueHeavy
         ? {
-            data: { contentId: record.content.id, trigger: "content.analyze.basic" },
+            data: buildHeavyJobData(record.content.id, jobData.debugOptions),
             jobName: smartFeedTaskNames.contentAnalyzeHeavy,
           }
         : null,
@@ -430,7 +508,7 @@ export async function runContentAnalyzeBasic(
         cached: false,
         contentId: record.content.id,
         modelStrategy: taskConfig.modelStrategy,
-        promptVersion: taskConfig.promptVersion,
+        promptVersion: effectivePromptVersion,
         runtimeState: taskConfig.runtimeState,
         thresholdExceeded,
         valueScore: basicAnalysis.valueScore,
@@ -444,7 +522,7 @@ export async function runContentAnalyzeBasic(
       cached: false,
       contentId: record.content.id,
       modelStrategy: taskConfig.modelStrategy,
-      promptVersion: taskConfig.promptVersion,
+      promptVersion: effectivePromptVersion,
       runtimeState: taskConfig.runtimeState,
       thresholdExceeded: false,
       valueScore: null,
@@ -514,14 +592,16 @@ export async function runContentAnalyzeHeavy(
     });
   }
 
+  const effectivePromptVersion = buildEffectivePromptVersion(taskConfig.promptVersion, jobData.debugOptions);
+
   // 3. 缓存检查
   const cachedRecord = await deps.findAnalysisRecord(
     record.content.id,
     taskConfig.modelStrategy,
-    taskConfig.promptVersion,
+    effectivePromptVersion,
   );
 
-  if (cachedRecord) {
+  if (cachedRecord && !shouldBypassCache(jobData.debugOptions)) {
     const cachedStatus = cachedRecord.status === "rejected" ? "rejected" : "full";
     await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
 
@@ -577,7 +657,7 @@ export async function runContentAnalyzeHeavy(
     const analysisStatus = digestEligible ? "full" : "rejected";
 
     // 7. 存储结果（合并前序基础分析的部分字段）
-    const analysisRecord = await deps.createAnalysisRecord({
+    const analysisRecordData: NewAnalysisRecord = {
       categories: basicRecord.categories,
       contentId: record.content.id,
       contentTraceId: basicRecord.contentTraceId ?? record.content.id,
@@ -587,7 +667,7 @@ export async function runContentAnalyzeHeavy(
       language: basicRecord.language,
       modelStrategy: taskConfig.modelStrategy,
       originalUrl: record.content.originalUrl,
-      promptVersion: taskConfig.promptVersion,
+      promptVersion: effectivePromptVersion,
       sentiment: basicRecord.sentiment,
       sourceId: record.source.id,
       sourceName,
@@ -599,7 +679,14 @@ export async function runContentAnalyzeHeavy(
         reason: heavySummary.reason,
       },
       valueScore: basicRecord.valueScore,
-    });
+    };
+    const analysisRecord =
+      cachedRecord && shouldBypassCache(jobData.debugOptions)
+        ? await deps.updateAnalysisRecord(cachedRecord.id, {
+            ...analysisRecordData,
+            createdAt: new Date(),
+          })
+        : await deps.createAnalysisRecord(analysisRecordData);
 
     // 推进状态至终点
     await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
@@ -613,7 +700,7 @@ export async function runContentAnalyzeHeavy(
         digestEligible,
         evidenceSnippet,
         modelStrategy: taskConfig.modelStrategy,
-        promptVersion: taskConfig.promptVersion,
+        promptVersion: effectivePromptVersion,
         runtimeState: taskConfig.runtimeState,
         status: analysisStatus,
       },
@@ -628,7 +715,7 @@ export async function runContentAnalyzeHeavy(
       digestEligible: false,
       evidenceSnippet: null,
       modelStrategy: taskConfig.modelStrategy,
-      promptVersion: taskConfig.promptVersion,
+      promptVersion: effectivePromptVersion,
       runtimeState: taskConfig.runtimeState,
       status: null,
     });

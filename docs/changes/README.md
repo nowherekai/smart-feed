@@ -25,6 +25,7 @@
 | [019](arch/019_sources-page-rss-validation-and-auto-title.md) | 2026-04-01 | Sources 页面单条 RSS 导入校验与自动标题 |
 | [020](arch/020_sources-page-opml-import-entry-and-result-summary.md) | 2026-04-01 | Sources 页面 OPML 导入入口与结果摘要 |
 | [021](arch/021_original-content-feed-page-and-filters.md) | 2026-04-02 | Original Content 时间流页面与筛选导航 |
+| [022](arch/022_original-content-detail-page-and-ai-debug-entry.md) | 2026-04-02 | Original Content 详情页与 AI 调试入口 |
 
 ## 运维变更
 
