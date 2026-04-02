@@ -5,11 +5,9 @@ import { buttonVariants } from "@/components/ui/button-variants";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-const ORIGINAL_CONTENT_TIME_ZONE = "Asia/Shanghai";
-
-function formatOriginalContentTime(value: Date): string {
+function formatOriginalContentTime(value: Date, timeZone: string): string {
   const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: ORIGINAL_CONTENT_TIME_ZONE,
+    timeZone,
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -27,7 +25,7 @@ function formatOriginalContentTime(value: Date): string {
   return `${values.month} ${values.day}, ${values.year} ${values.hour}:${values.minute}`;
 }
 
-export function OriginalContentCard({ record }: { record: OriginalContentListItem }) {
+export function OriginalContentCard({ record, timeZone }: { record: OriginalContentListItem; timeZone: string }) {
   return (
     <Card className="gap-0 border-border bg-card/80 shadow-sm">
       <CardHeader className="gap-4 pb-0">
@@ -44,7 +42,7 @@ export function OriginalContentCard({ record }: { record: OriginalContentListIte
 
           <div className="flex items-center gap-2 text-sm text-muted-foreground md:shrink-0">
             <CalendarDays className="size-4" />
-            <span>{formatOriginalContentTime(record.effectiveAt)}</span>
+            <span>{formatOriginalContentTime(record.effectiveAt, timeZone)}</span>
           </div>
         </div>
       </CardHeader>

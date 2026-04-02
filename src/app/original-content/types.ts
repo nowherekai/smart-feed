@@ -26,6 +26,7 @@ export type OriginalContentPageData = {
   totalPages: number;
   selectedRange: OriginalContentFilterRange;
   selectedSourceId: string | null;
+  timeZone: string;
 };
 
 export type OriginalContentSearchParams = {

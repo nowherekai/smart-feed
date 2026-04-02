@@ -106,5 +106,6 @@ test("loadOriginalContentFeed clamps page and maps preview records", async () =>
     totalPages: 2,
     selectedRange: "last-week",
     selectedSourceId: "source-2",
+    timeZone: "Asia/Shanghai",
   });
 });

@@ -6,11 +6,11 @@ import type {
   OriginalContentSearchParams,
 } from "@/app/original-content/types";
 import { createOriginalContentPreview } from "@/components/features/original-content-preview";
+import { getAppEnv } from "@/config";
 import { db } from "@/db";
 import { contentItemRaws, contentItems, sources } from "@/db/schema";
 
 const ORIGINAL_CONTENT_PAGE_SIZE = 100;
-const ORIGINAL_CONTENT_TIME_ZONE = "Asia/Shanghai";
 const VALID_RANGES = new Set<OriginalContentFilterRange>(["all", "today", "last-2-days", "last-week"]);
 
 type ZonedDateParts = {
@@ -141,7 +141,7 @@ function zonedDateTimeToUtc(parts: ZonedDateParts, timeZone: string): Date {
 export function getOriginalContentRangeStart(
   range: OriginalContentFilterRange,
   now = new Date(),
-  timeZone = ORIGINAL_CONTENT_TIME_ZONE,
+  timeZone = getAppEnv().timeZone,
 ): Date | null {
   if (range === "all") {
     return null;
@@ -229,9 +229,10 @@ export async function loadOriginalContentFeed(
   deps: OriginalContentQueryDeps = createOriginalContentQueryDeps(),
   now = new Date(),
 ): Promise<OriginalContentPageData> {
+  const timeZone = getAppEnv().timeZone;
   const normalized = normalizeOriginalContentFeedParams(input);
   const filter: OriginalContentQueryFilter = {
-    rangeStart: getOriginalContentRangeStart(normalized.range, now),
+    rangeStart: getOriginalContentRangeStart(normalized.range, now, timeZone),
     sourceId: normalized.sourceId,
   };
   const totalItems = await deps.countItems(filter);
@@ -263,5 +264,6 @@ export async function loadOriginalContentFeed(
     totalPages,
     selectedRange: normalized.range,
     selectedSourceId: normalized.sourceId,
+    timeZone,
   };
 }

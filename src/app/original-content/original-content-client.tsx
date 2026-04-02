@@ -298,7 +298,7 @@ export function OriginalContentClient({
           <div className="space-y-8">
             <div className="space-y-6">
               {data.items.map((item) => (
-                <OriginalContentCard key={item.id} record={item} />
+                <OriginalContentCard key={item.id} record={item} timeZone={data.timeZone} />
               ))}
             </div>
 
