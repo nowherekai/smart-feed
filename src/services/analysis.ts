@@ -360,19 +360,25 @@ export async function runContentAnalyzeBasic(
   jobData: ContentAnalyzeBasicJobData,
   overrides: ContentAnalyzeBasicDeps = {},
 ): Promise<PipelineStepResult<ContentAnalyzeBasicPayload, ContentAnalyzeHeavyJobData>> {
+  logger.info("runContentAnalyzeBasic started", {
+    contentId: jobData.contentId,
+    pipelineRunId: jobData.pipelineRunId,
+    trigger: jobData.trigger,
+  });
+
   const deps = buildBasicDeps(overrides);
   const record = await deps.getContentForAnalysisById(jobData.contentId);
 
   // 1. 数据校验
   if (!record) {
-    return buildContentStepFailure(
-      `[services/analysis] Content "${jobData.contentId}" not found.`,
-      buildMissingContentPayload(jobData.contentId),
-    );
+    const message = `[services/analysis] Content "${jobData.contentId}" not found.`;
+    logger.error(message, { contentId: jobData.contentId });
+    return buildContentStepFailure(message, buildMissingContentPayload(jobData.contentId));
   }
 
   if (!record.content.cleanedMd?.trim()) {
     const message = `[services/analysis] Content "${record.content.id}" has no cleaned markdown for analysis.`;
+    logger.warn(message, { contentId: record.content.id });
 
     await deps.updateContentItem(record.content.id, {
       processingError: message,
@@ -391,6 +397,7 @@ export async function runContentAnalyzeBasic(
     taskConfig = deps.resolveBasicTaskConfig();
   } catch (error) {
     const message = toErrorMessage(error);
+    logger.error("Failed to resolve basic task config", { error: message, contentId: record.content.id });
     await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
     return buildContentStepFailure(message, {
       ...buildMissingContentPayload(record.content.id),
@@ -400,6 +407,7 @@ export async function runContentAnalyzeBasic(
 
   if (taskConfig.runtimeState === "disabled" || taskConfig.modelStrategy === null) {
     const message = "[services/analysis] AI provider is not configured for content.analyze.basic.";
+    logger.warn(message, { contentId: record.content.id, runtimeState: taskConfig.runtimeState });
     await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
     return buildContentStepFailure(message, {
       ...buildMissingContentPayload(record.content.id),
@@ -420,6 +428,14 @@ export async function runContentAnalyzeBasic(
   if (cachedRecord && !shouldBypassCache(jobData.debugOptions)) {
     const thresholdExceeded = cachedRecord.valueScore > deps.appEnv.valueScoreThreshold;
     const shouldQueueHeavy = shouldContinueToHeavy(thresholdExceeded, jobData.debugOptions);
+
+    logger.info("content.analyze.basic cache hit", {
+      analysisRecordId: cachedRecord.id,
+      contentId: record.content.id,
+      shouldQueueHeavy,
+      thresholdExceeded,
+      valueScore: cachedRecord.valueScore,
+    });
 
     if (!thresholdExceeded) {
       await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
@@ -451,11 +467,24 @@ export async function runContentAnalyzeBasic(
   // 4. 执行 AI 分析
   try {
     const sourceName = getSourceName(record.source);
+    logger.info("Running AI basic analysis", {
+      contentId: record.content.id,
+      modelStrategy: taskConfig.modelStrategy,
+      promptVersion: effectivePromptVersion,
+      sourceName,
+    });
+
     const basicAnalysis = await deps.runBasicAnalysis({
       cleanedMd: record.content.cleanedMd,
       originalUrl: record.content.originalUrl,
       sourceName,
       title: getContentTitle(record.content),
+    });
+
+    logger.info("AI basic analysis completed", {
+      contentId: record.content.id,
+      language: basicAnalysis.language,
+      valueScore: basicAnalysis.valueScore,
     });
 
     // 5. 存储结果
@@ -489,6 +518,12 @@ export async function runContentAnalyzeBasic(
     const thresholdExceeded = basicAnalysis.valueScore > deps.appEnv.valueScoreThreshold;
     const shouldQueueHeavy = shouldContinueToHeavy(thresholdExceeded, jobData.debugOptions);
 
+    logger.info("Stored basic analysis record", {
+      analysisRecordId: analysisRecord.id,
+      shouldQueueHeavy,
+      thresholdExceeded,
+    });
+
     // 更新内容状态
     if (!thresholdExceeded) {
       await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
@@ -516,6 +551,7 @@ export async function runContentAnalyzeBasic(
     });
   } catch (error) {
     const message = toErrorMessage(error);
+    logger.error("AI basic analysis failed", { error: message, contentId: record.content.id });
     await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
     return buildContentStepFailure(message, {
       analysisRecordId: null,
@@ -554,14 +590,14 @@ export async function runContentAnalyzeHeavy(
 
   // 1. 数据校验
   if (!record) {
-    return buildContentStepFailure(
-      `[services/analysis] Content "${jobData.contentId}" not found.`,
-      buildMissingHeavyPayload(jobData.contentId),
-    );
+    const message = `[services/analysis] Content "${jobData.contentId}" not found.`;
+    logger.error(message, { contentId: jobData.contentId });
+    return buildContentStepFailure(message, buildMissingHeavyPayload(jobData.contentId));
   }
 
   if (!record.content.cleanedMd?.trim()) {
     const message = `[services/analysis] Content "${record.content.id}" has no cleaned markdown for heavy analysis.`;
+    logger.warn(message, { contentId: record.content.id });
     await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
     return buildContentStepFailure(message, {
       ...buildMissingHeavyPayload(record.content.id),
@@ -575,6 +611,7 @@ export async function runContentAnalyzeHeavy(
     taskConfig = deps.resolveHeavyTaskConfig();
   } catch (error) {
     const message = toErrorMessage(error);
+    logger.error("Failed to resolve heavy task config", { error: message, contentId: record.content.id });
     await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
     return buildContentStepFailure(message, {
       ...buildMissingHeavyPayload(record.content.id),
@@ -584,6 +621,7 @@ export async function runContentAnalyzeHeavy(
 
   if (taskConfig.runtimeState === "disabled" || taskConfig.modelStrategy === null) {
     const message = "[services/analysis] AI provider is not configured for content.analyze.heavy.";
+    logger.warn(message, { contentId: record.content.id, runtimeState: taskConfig.runtimeState });
     await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
     return buildContentStepFailure(message, {
       ...buildMissingHeavyPayload(record.content.id),
@@ -603,6 +641,11 @@ export async function runContentAnalyzeHeavy(
 
   if (cachedRecord && !shouldBypassCache(jobData.debugOptions)) {
     const cachedStatus = cachedRecord.status === "rejected" ? "rejected" : "full";
+    logger.info("content.analyze.heavy cache hit", {
+      analysisRecordId: cachedRecord.id,
+      contentId: record.content.id,
+      status: cachedStatus,
+    });
     await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
 
     return createCompletedStepResult({
@@ -626,6 +669,7 @@ export async function runContentAnalyzeHeavy(
 
   if (!basicRecord) {
     const message = `[services/analysis] Content "${record.content.id}" is missing a basic analysis record before heavy analysis.`;
+    logger.error(message, { contentId: record.content.id });
     await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
     return buildContentStepFailure(message, {
       ...buildMissingHeavyPayload(record.content.id),
@@ -637,6 +681,13 @@ export async function runContentAnalyzeHeavy(
   // 5. 执行 AI 深度分析
   try {
     const sourceName = getSourceName(record.source);
+    logger.info("Running AI heavy analysis", {
+      contentId: record.content.id,
+      modelStrategy: taskConfig.modelStrategy,
+      promptVersion: effectivePromptVersion,
+      sourceName,
+    });
+
     const heavySummary = await deps.runHeavySummary({
       cleanedMd: record.content.cleanedMd,
       originalUrl: record.content.originalUrl,
@@ -655,6 +706,12 @@ export async function runContentAnalyzeHeavy(
     });
 
     const analysisStatus = digestEligible ? "full" : "rejected";
+
+    logger.info("AI heavy analysis completed", {
+      analysisStatus,
+      contentId: record.content.id,
+      digestEligible,
+    });
 
     // 7. 存储结果（合并前序基础分析的部分字段）
     const analysisRecordData: NewAnalysisRecord = {
@@ -688,6 +745,11 @@ export async function runContentAnalyzeHeavy(
           })
         : await deps.createAnalysisRecord(analysisRecordData);
 
+    logger.info("Stored heavy analysis record", {
+      analysisRecordId: analysisRecord.id,
+      status: analysisStatus,
+    });
+
     // 推进状态至终点
     await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
 
@@ -707,6 +769,7 @@ export async function runContentAnalyzeHeavy(
     });
   } catch (error) {
     const message = toErrorMessage(error);
+    logger.error("AI heavy analysis failed", { error: message, contentId: record.content.id });
     await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
     return buildContentStepFailure(message, {
       analysisRecordId: null,

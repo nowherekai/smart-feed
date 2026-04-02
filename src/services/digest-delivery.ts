@@ -153,8 +153,10 @@ export async function runDigestDeliver(
 
   // 1. 基础校验
   if (!report) {
+    const message = `[services/digest-delivery] Digest "${jobData.digestId}" not found.`;
+    logger.error(message, { digestId: jobData.digestId });
     return createFailedStepResult({
-      message: `[services/digest-delivery] Digest "${jobData.digestId}" not found.`,
+      message,
       payload: buildPayload({
         digestDate: null,
         digestId: jobData.digestId,
@@ -171,6 +173,10 @@ export async function runDigestDeliver(
 
   // 2. 幂等检查
   if (report.status === "sent" || report.sentAt) {
+    logger.info("digest.deliver skipped because it is already sent", {
+      digestId: report.id,
+      sentAt: report.sentAt?.toISOString(),
+    });
     return createCompletedStepResult({
       message: `digest.deliver skipped because ${report.id} is already sent`,
       payload: buildPayload({
@@ -223,12 +229,14 @@ export async function runDigestDeliver(
 
   // 4. 内容完整性校验
   if (!report.markdownBody?.trim()) {
-    const error = new Error(`[services/digest-delivery] Digest "${report.id}" has empty markdown body.`);
-    await deps.updateDigestReport(report.id, { sentAt: null, status: "failed" });
-    logger.error("digest delivery failed because markdown body is empty", {
+    const message = `[services/digest-delivery] Digest "${report.id}" has empty markdown body.`;
+    logger.error(message, {
       digestId: report.id,
       trigger: jobData.trigger,
     });
+
+    await deps.updateDigestReport(report.id, { sentAt: null, status: "failed" });
+    const error = new Error(message);
     throw error;
   }
 
@@ -237,12 +245,20 @@ export async function runDigestDeliver(
   try {
     transportConfig = getRequiredEmailTransportConfig(appEnv);
   } catch (error) {
+    const message = toErrorMessage(error);
+    logger.error("Incomplete SMTP configuration", { error: message, digestId: report.id });
     await deps.updateDigestReport(report.id, { sentAt: null, status: "failed" });
     throw error;
   }
 
   // 5. 执行投递
   try {
+    logger.info("Attempting to send digest email", {
+      digestId: report.id,
+      recipient: transportConfig.to,
+      subject: emailSubject,
+    });
+
     await deps.sendDigestEmail({
       from: transportConfig.from,
       host: transportConfig.host,
@@ -255,6 +271,11 @@ export async function runDigestDeliver(
     });
 
     const sentAt = deps.now();
+    logger.info("Digest email sent successfully", {
+      digestId: report.id,
+      recipient: transportConfig.to,
+      sentAt: sentAt.toISOString(),
+    });
 
     // 6. 持久化发送成功状态
     await deps.updateDigestReport(report.id, {

@@ -163,11 +163,23 @@ async function processSingleUrl(
   inputUrl: string,
   deps: Required<SourceImportDeps>,
 ): Promise<SourceImportItemOutcome> {
+  logger.info("Processing single URL import", { inputUrl, importRunId });
+
   try {
     const preparedSource = await deps.verifyRssSource(inputUrl);
+    logger.info("URL verified and prepared", {
+      inputUrl,
+      normalizedUrl: preparedSource.normalizedUrl,
+      title: preparedSource.title,
+    });
+
     const existingSource = await deps.findSourceByIdentifier(preparedSource.normalizedUrl);
 
     if (existingSource) {
+      logger.info("Source already exists, skipping creation", {
+        normalizedUrl: preparedSource.normalizedUrl,
+        sourceId: existingSource.id,
+      });
       return {
         inputUrl,
         normalizedUrl: preparedSource.normalizedUrl,
@@ -187,12 +199,19 @@ async function processSingleUrl(
       firstImportedAt: new Date(),
     });
 
+    logger.info("Source created successfully", {
+      sourceId: createdSource.id,
+      identifier: preparedSource.normalizedUrl,
+    });
+
     // 成功创建后，立即触发首次抓取
     await deps.enqueueSourceFetch({
       sourceId: createdSource.id,
       importRunId,
       trigger: "source.import",
     });
+
+    logger.info("Initial source fetch task enqueued", { sourceId: createdSource.id });
 
     return {
       inputUrl,
@@ -202,8 +221,9 @@ async function processSingleUrl(
       errorMessage: null,
     };
   } catch (error) {
+    const errorMessage = toFailureMessage(error);
     logger.warn("source import item failed", {
-      error: toFailureMessage(error),
+      error: errorMessage,
       inputUrl,
       importRunId,
     });
@@ -213,7 +233,7 @@ async function processSingleUrl(
       normalizedUrl: null,
       result: "failed",
       sourceId: null,
-      errorMessage: toFailureMessage(error),
+      errorMessage,
     };
   }
 }
@@ -282,6 +302,8 @@ export async function runSourceImport(
   const deps = buildDeps(overrides);
   const startedAt = new Date();
 
+  logger.info("runSourceImport started", { mode: input.mode });
+
   // 模式 1: 单条导入
   if (input.mode === "single") {
     const run = await deps.createImportRun({
@@ -294,6 +316,11 @@ export async function runSourceImport(
 
     await persistOutcome(run.id, outcome, deps);
     const counts = await finalizeRun(run.id, [outcome], deps);
+
+    logger.info("Single URL import completed", {
+      importRunId: run.id,
+      result: outcome.result,
+    });
 
     return {
       importRunId: run.id,
@@ -316,6 +343,11 @@ export async function runSourceImport(
     const parsedSources = deps.parseOpml(input.opml);
     const urls = parsedSources.map((source) => source.xmlUrl);
 
+    logger.info("OPML parsed", {
+      importRunId: run.id,
+      urlCount: urls.length,
+    });
+
     await deps.updateImportRun(run.id, {
       totalCount: urls.length,
     });
@@ -323,13 +355,19 @@ export async function runSourceImport(
     const outcomes: SourceImportItemOutcome[] = [];
 
     // 串行执行每一条 URL 的导入
-    for (const url of urls) {
+    for (const [index, url] of urls.entries()) {
+      logger.info(`Importing OPML item ${index + 1}/${urls.length}`, { url });
       const outcome = await processSingleUrl(run.id, url, deps);
       outcomes.push(outcome);
       await persistOutcome(run.id, outcome, deps);
     }
 
     const counts = await finalizeRun(run.id, outcomes, deps);
+
+    logger.info("OPML import completed", {
+      importRunId: run.id,
+      ...counts,
+    });
 
     return {
       importRunId: run.id,
@@ -340,6 +378,11 @@ export async function runSourceImport(
     };
   } catch (error) {
     const errorMessage = toFailureMessage(error);
+
+    logger.error("OPML import failed", {
+      importRunId: run.id,
+      error: errorMessage,
+    });
 
     await deps.updateImportRun(run.id, {
       failedCount: 1,

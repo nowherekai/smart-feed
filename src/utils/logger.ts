@@ -7,6 +7,10 @@ type LogEntry = LogContext & {
   ts: string;
 };
 
+function shouldWriteLog(level: LogLevel): boolean {
+  return !(level === "debug" && process.env.NODE_ENV === "production");
+}
+
 function writeLog(level: LogLevel, message: string, context: LogContext = {}): LogEntry {
   const entry: LogEntry = {
     ...context,
@@ -14,6 +18,11 @@ function writeLog(level: LogLevel, message: string, context: LogContext = {}): L
     message,
     ts: new Date().toISOString(),
   };
+
+  if (!shouldWriteLog(level)) {
+    return entry;
+  }
+
   const writer =
     level === "debug"
       ? console.debug

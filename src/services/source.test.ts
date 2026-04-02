@@ -35,6 +35,17 @@ test("verifyAndPrepareRssSource rejects unsupported protocols", async () => {
   await expect(verifyAndPrepareRssSource("ftp://example.com/feed.xml")).rejects.toThrow("Unsupported URL protocol");
 });
 
+test("verifyAndPrepareRssSource keeps transport error messages free of the full URL", async () => {
+  await expect(
+    verifyAndPrepareRssSource("https://example.com/feed.xml?token=secret", {
+      fetch: async () =>
+        new Response("forbidden", {
+          status: 403,
+        }),
+    }),
+  ).rejects.toThrow("[services/source] Source URL returned 403.");
+});
+
 test("verifyAndPrepareRssSource rejects non-feed responses", async () => {
   await expect(
     verifyAndPrepareRssSource("https://example.com/feed.xml", {

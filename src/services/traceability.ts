@@ -4,6 +4,8 @@
  * 落实“现实约束”：所有 AI 生成的内容必须可追溯到原始来源、链接和原文片段。
  */
 
+import { logger } from "../utils";
+
 type DigestEligibleRecord = {
   /** 内容可追溯 ID */
   contentTraceId?: string | null;
@@ -22,9 +24,30 @@ type DigestEligibleRecord = {
  * 必须同时具备：来源 ID、来源名、内容 ID、原文链接、以及证据片段。
  */
 export function canEnterDigest(record: DigestEligibleRecord): boolean {
-  return Boolean(
-    record.sourceTraceId && record.sourceName && record.contentTraceId && record.originalUrl && record.evidenceSnippet,
-  );
+  const checks = {
+    sourceTraceId: Boolean(record.sourceTraceId),
+    sourceName: Boolean(record.sourceName),
+    contentTraceId: Boolean(record.contentTraceId),
+    originalUrl: Boolean(record.originalUrl),
+    evidenceSnippet: Boolean(record.evidenceSnippet),
+  };
+
+  const isEligible = Object.values(checks).every(Boolean);
+
+  if (!isEligible) {
+    logger.debug("Traceability check failed", {
+      ...checks,
+      contentTraceId: record.contentTraceId,
+      sourceName: record.sourceName,
+    });
+  } else {
+    logger.debug("Traceability check passed", {
+      contentTraceId: record.contentTraceId,
+      sourceName: record.sourceName,
+    });
+  }
+
+  return isEligible;
 }
 
 export type { DigestEligibleRecord };

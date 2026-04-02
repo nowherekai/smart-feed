@@ -7,6 +7,7 @@
 import { DOMParser } from "linkedom";
 import TurndownService from "turndown";
 
+import { logger } from "../utils";
 import type { RawContentFormat } from "./html-fetcher";
 
 /** 最终 Markdown 的最大字节数限制，防止 AI 处理成本过高 */
@@ -300,14 +301,41 @@ function normalizePlainTextToMarkdown(input: NormalizeRawContentInput): string {
 export function normalizeRawContent(input: NormalizeRawContentInput): NormalizeRawContentResult {
   const rawBody = input.rawBody.trim();
 
+  logger.info("Normalizing raw content", {
+    format: input.format,
+    url: input.originalUrl,
+    rawLength: rawBody.length,
+  });
+
   if (!rawBody) {
-    throw new Error("[services/normalizer] rawBody is empty.");
+    const errorMsg = "[services/normalizer] rawBody is empty.";
+    logger.error(errorMsg, { url: input.originalUrl });
+    throw new Error(errorMsg);
   }
 
-  const markdown =
-    input.format === "html" || /<\/?[a-z][\s\S]*>/i.test(rawBody)
-      ? normalizeHtmlToMarkdown(input)
-      : normalizePlainTextToMarkdown(input);
+  try {
+    const isActuallyHtml = input.format === "html" || looksLikeHtml(rawBody);
 
-  return truncateMarkdown(cleanMarkdown(markdown));
+    const markdown = isActuallyHtml ? normalizeHtmlToMarkdown(input) : normalizePlainTextToMarkdown(input);
+
+    const result = truncateMarkdown(cleanMarkdown(markdown));
+
+    logger.info("Content normalization completed", {
+      url: input.originalUrl,
+      detectedAsHtml: isActuallyHtml,
+      finalLength: result.markdown.length,
+      truncated: result.truncated,
+    });
+
+    return result;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown normalization error";
+    logger.error("Content normalization failed", { error: errorMessage, url: input.originalUrl });
+    throw error;
+  }
+}
+
+/** 辅助函数：判断是否像 HTML */
+function looksLikeHtml(value: string): boolean {
+  return /<\/?[a-z][\s\S]*>/i.test(value);
 }
