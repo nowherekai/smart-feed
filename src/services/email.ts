@@ -6,7 +6,7 @@
 
 import { marked } from "marked";
 import nodemailer from "nodemailer";
-import { logger } from "../utils";
+import { createLogger } from "../utils";
 
 type EmailTransportConfig = {
   from: string;
@@ -36,6 +36,7 @@ type SendDigestEmailInput = EmailTransportConfig & {
   markdownBody: string;
   subject: string;
 };
+const logger = createLogger("EmailService");
 
 /**
  * 基础 HTML 邮件包装模板

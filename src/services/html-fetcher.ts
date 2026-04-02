@@ -5,7 +5,7 @@
  */
 
 import { DOMParser } from "linkedom";
-import { logger, sanitizeUrlForLogging } from "../utils";
+import { createLogger, sanitizeUrlForLogging } from "../utils";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -27,6 +27,7 @@ export type RawContentFormat = "html" | "text" | "markdown" | "transcript";
 export type FetchPageHtmlDeps = {
   fetchImpl?: FetchLike;
 };
+const logger = createLogger("HtmlFetcherService");
 
 /** 规范化空白字符 */
 function normalizeWhitespace(value: string): string {
@@ -79,7 +80,7 @@ export async function fetchPageHtml(url: string, deps: FetchPageHtmlDeps = {}): 
 
     if (!response.ok) {
       const errorMsg = `[services/html-fetcher] Page fetch returned ${response.status}.`;
-      logger.error(errorMsg, { url: safeUrlToLog, status: response.status });
+      logger.error("Page fetch returned non-success status", { url: safeUrlToLog, status: response.status });
       throw new Error(errorMsg);
     }
 
@@ -87,7 +88,7 @@ export async function fetchPageHtml(url: string, deps: FetchPageHtmlDeps = {}): 
 
     if (!html.trim()) {
       const errorMsg = "[services/html-fetcher] Page fetch returned an empty response.";
-      logger.warn(errorMsg, { url: safeUrlToLog });
+      logger.warn("Page fetch returned an empty response", { url: safeUrlToLog });
       throw new Error(errorMsg);
     }
 

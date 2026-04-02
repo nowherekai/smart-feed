@@ -22,7 +22,7 @@ import { analysisRecords, contentItems, getDb, sources } from "../db";
 import { normalizeDebugVariantTag } from "../lib/debug-run";
 import { createCompletedStepResult, createFailedStepResult, type PipelineStepResult } from "../pipeline/types";
 import { smartFeedTaskNames } from "../queue";
-import { logger } from "../utils";
+import { createLogger } from "../utils";
 import type { ContentAnalysisDebugOptions, ContentAnalyzeBasicJobData, ContentAnalyzeHeavyJobData } from "./content";
 import { canEnterDigest } from "./traceability";
 
@@ -37,6 +37,7 @@ type ContentForAnalysis = {
   content: ContentItemRecord;
   source: SourceRecord;
 };
+const logger = createLogger("AnalysisService");
 
 /** 基础分析流水线业务载荷 */
 export type ContentAnalyzeBasicPayload = {
@@ -372,13 +373,13 @@ export async function runContentAnalyzeBasic(
   // 1. 数据校验
   if (!record) {
     const message = `[services/analysis] Content "${jobData.contentId}" not found.`;
-    logger.error(message, { contentId: jobData.contentId });
+    logger.error("Content not found", { contentId: jobData.contentId });
     return buildContentStepFailure(message, buildMissingContentPayload(jobData.contentId));
   }
 
   if (!record.content.cleanedMd?.trim()) {
     const message = `[services/analysis] Content "${record.content.id}" has no cleaned markdown for analysis.`;
-    logger.warn(message, { contentId: record.content.id });
+    logger.warn("Content has no cleaned markdown for analysis", { contentId: record.content.id });
 
     await deps.updateContentItem(record.content.id, {
       processingError: message,
@@ -591,13 +592,13 @@ export async function runContentAnalyzeHeavy(
   // 1. 数据校验
   if (!record) {
     const message = `[services/analysis] Content "${jobData.contentId}" not found.`;
-    logger.error(message, { contentId: jobData.contentId });
+    logger.error("Content not found", { contentId: jobData.contentId });
     return buildContentStepFailure(message, buildMissingHeavyPayload(jobData.contentId));
   }
 
   if (!record.content.cleanedMd?.trim()) {
     const message = `[services/analysis] Content "${record.content.id}" has no cleaned markdown for heavy analysis.`;
-    logger.warn(message, { contentId: record.content.id });
+    logger.warn("Content has no cleaned markdown for heavy analysis", { contentId: record.content.id });
     await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
     return buildContentStepFailure(message, {
       ...buildMissingHeavyPayload(record.content.id),
@@ -669,7 +670,7 @@ export async function runContentAnalyzeHeavy(
 
   if (!basicRecord) {
     const message = `[services/analysis] Content "${record.content.id}" is missing a basic analysis record before heavy analysis.`;
-    logger.error(message, { contentId: record.content.id });
+    logger.error("Content is missing a basic analysis record before heavy analysis", { contentId: record.content.id });
     await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
     return buildContentStepFailure(message, {
       ...buildMissingHeavyPayload(record.content.id),

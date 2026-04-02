@@ -17,6 +17,7 @@ import {
   smartFeedTaskNames,
 } from "../queue";
 import { startScheduler, stopScheduler } from "../scheduler";
+import { createLogger, type LoggerLike } from "../utils";
 import { startWorkerBullBoard, type WorkerBullBoardServer } from "./bull-board";
 
 /** Worker 应用实例类型子集 */
@@ -34,8 +35,7 @@ type ProcessLike = {
   once: (event: "SIGINT" | "SIGTERM", listener: () => void) => void;
 };
 
-/** 日志接口子集 */
-type LoggerLike = Pick<typeof console, "error" | "info">;
+const workerLogger = createLogger("WorkerMain");
 
 /** 应用启动依赖项 */
 export type WorkerAppDeps = {
@@ -102,7 +102,7 @@ function extractJobContext(job: Job<PipelineJobData, PipelineJobResult, SmartFee
  * 4. 监听 SIGINT/SIGTERM 实现优雅停机
  */
 export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerApp> {
-  const logger = deps.logger ?? console;
+  const logger = deps.logger ?? workerLogger;
   const processLike = deps.process ?? process;
   const exit = deps.exit ?? ((code: number) => process.exit(code));
   const createAppWorker = deps.createWorker ?? createWorker;
@@ -112,12 +112,12 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
   const stopAppScheduler = deps.stopScheduler ?? stopScheduler;
   const closeRedis = deps.closeRedisConnection ?? closeRedisConnection;
 
-  logger.info("[worker] Starting smart-feed worker...");
+  logger.info("Worker server started");
 
   const makeProcessor =
     (allowedTaskNames: ReadonlySet<SmartFeedTaskName>) =>
     async (job: Job<PipelineJobData, PipelineJobResult, SmartFeedTaskName>): Promise<PipelineJobResult> => {
-      logger.info("[worker] Picked up job", extractJobContext(job));
+      logger.info("Job picked up", extractJobContext(job));
 
       if (!allowedTaskNames.has(job.name)) {
         throw new Error(`[worker] Task "${job.name}" is not handled by this worker.`);
@@ -126,7 +126,7 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
       const handler = getHandler(job.name);
       const result = await handler(job);
 
-      logger.info("[worker] Job completed", {
+      logger.info("Job completed", {
         ...extractJobContext(job),
         message: "message" in result && typeof result.message === "string" ? result.message : null,
         nextStepQueued: "nextStepQueued" in result ? result.nextStepQueued : null,
@@ -158,11 +158,11 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
 
   for (const worker of workers) {
     worker.on("ready", () => {
-      logger.info("[worker] Worker is ready.");
+      logger.info("Worker is ready");
     });
 
     worker.on("failed", (job, error) => {
-      logger.error("[worker] Job failed", {
+      logger.error("Job failed", {
         ...extractJobContext(job),
         error: error instanceof Error ? error.message : String(error),
       });
@@ -185,7 +185,7 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
    * 优雅停机逻辑
    */
   const shutdown = async (signal: string) => {
-    logger.info(`[worker] Received ${signal}, shutting down...`);
+    logger.info("Shutdown signal received", { signal });
     await bullBoard?.close();
     await Promise.all(workers.map((worker) => worker.close()));
     await stopAppScheduler();
@@ -220,7 +220,9 @@ async function main() {
 // 仅在直接运行时执行 (Bun 兼容方式)
 if (import.meta.main) {
   void main().catch(async (error) => {
-    console.error("[worker] Failed to start worker.", error);
+    workerLogger.error("Worker startup failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     await stopScheduler().catch(() => undefined);
     await closeLegacyImportQueue().catch(() => undefined);
     await closeRedisConnection();

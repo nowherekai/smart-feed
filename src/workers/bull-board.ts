@@ -10,11 +10,12 @@ import type { Queue } from "bullmq";
 import express from "express";
 
 import { getQueueRegistry, type QueueName, type QueueRegistry, queueNames } from "../queue";
+import { createLogger, type LoggerLike } from "../utils";
 import { getWorkerEnv, type WorkerEnv } from "./env";
 
 export const WORKER_BULL_BOARD_BASE_PATH = "/admin/queues";
-
-type LoggerLike = Pick<typeof console, "info">;
+const workerBullBoardLogger = createLogger("WorkerBullBoard");
+type BullBoardLoggerLike = Pick<LoggerLike, "info">;
 
 type QueueAdapterFactory = (queue: Queue<Record<string, unknown>, unknown, string>, queueName: QueueName) => unknown;
 
@@ -49,7 +50,7 @@ export type WorkerBullBoardDeps = {
   createQueueAdapter?: QueueAdapterFactory;
   createServerAdapter?: () => ServerAdapterLike;
   getQueueRegistry?: () => QueueRegistry;
-  logger?: LoggerLike;
+  logger?: BullBoardLoggerLike;
   workerEnv?: WorkerEnv;
 };
 
@@ -109,7 +110,7 @@ export async function startWorkerBullBoard(deps: WorkerBullBoardDeps = {}): Prom
   const app = (deps.createApp ?? (() => express()))();
   const serverAdapter = (deps.createServerAdapter ?? (() => new ExpressAdapter()))();
   const registry = (deps.getQueueRegistry ?? getQueueRegistry)();
-  const logger = deps.logger ?? console;
+  const logger = deps.logger ?? workerBullBoardLogger;
   const queueAdapters = buildBullBoardQueueAdapters(registry, deps.createQueueAdapter);
 
   serverAdapter.setBasePath(WORKER_BULL_BOARD_BASE_PATH);
@@ -133,7 +134,11 @@ export async function startWorkerBullBoard(deps: WorkerBullBoardDeps = {}): Prom
   await waitForServerListening(server);
 
   const url = `http://${workerEnv.bullBoardHost}:${workerEnv.bullBoardPort}${WORKER_BULL_BOARD_BASE_PATH}`;
-  logger.info(`[worker] bull-board is listening on ${url}`);
+  logger.info("Bull Board server started", {
+    host: workerEnv.bullBoardHost,
+    port: workerEnv.bullBoardPort,
+    url,
+  });
 
   return {
     basePath: WORKER_BULL_BOARD_BASE_PATH,

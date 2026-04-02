@@ -27,6 +27,7 @@
 | [021](arch/021_original-content-feed-page-and-filters.md) | 2026-04-02 | Original Content 时间流页面与筛选导航 |
 | [022](arch/022_original-content-detail-page-and-ai-debug-entry.md) | 2026-04-02 | Original Content 详情页与 AI 调试入口 |
 | [023](arch/023_service-layer-structured-logging-and-log-guardrails.md) | 2026-04-02 | 服务层结构化日志增强与日志边界收敛 |
+| [024](arch/024_backend-scoped-log-format-unification.md) | 2026-04-02 | 后端组件化日志格式统一 |
 
 ## 运维变更
 

@@ -7,7 +7,7 @@
 import { eq } from "drizzle-orm";
 
 import { getDb, pipelineRuns, stepRuns } from "../db";
-import { logger } from "../utils";
+import { createLogger } from "../utils";
 
 type PipelineRun = typeof pipelineRuns.$inferSelect;
 type NewPipelineRun = typeof pipelineRuns.$inferInsert;
@@ -16,6 +16,7 @@ type PipelineRunUpdate = Partial<Omit<NewPipelineRun, "id">>;
 type StepRun = typeof stepRuns.$inferSelect;
 type NewStepRun = typeof stepRuns.$inferInsert;
 type StepRunUpdate = Partial<Omit<NewStepRun, "id">>;
+const logger = createLogger("PipelineTrackingService");
 
 function requireInsertedRow<T>(row: T | undefined, entityName: string): T {
   if (!row) {
@@ -31,7 +32,7 @@ export async function createPipelineRun(data: NewPipelineRun): Promise<PipelineR
   const [pipelineRun] = await db.insert(pipelineRuns).values(data).returning();
 
   const record = requireInsertedRow(pipelineRun, "pipeline run");
-  logger.debug("Database: Pipeline run created", {
+  logger.debug("Pipeline run created in database", {
     pipelineRunId: record.id,
     pipelineName: record.pipelineName,
   });
@@ -47,7 +48,7 @@ export async function updatePipelineRun(id: string, data: PipelineRunUpdate): Pr
 
   const db = getDb();
   await db.update(pipelineRuns).set(data).where(eq(pipelineRuns.id, id));
-  logger.debug("Database: Pipeline run updated", { pipelineRunId: id, status: data.status });
+  logger.debug("Pipeline run updated in database", { pipelineRunId: id, status: data.status });
 }
 
 /** 创建步骤运行记录 */
@@ -56,7 +57,7 @@ export async function createStepRun(data: NewStepRun): Promise<StepRun> {
   const [stepRun] = await db.insert(stepRuns).values(data).returning();
 
   const record = requireInsertedRow(stepRun, "step run");
-  logger.debug("Database: Step run created", {
+  logger.debug("Step run created in database", {
     stepRunId: record.id,
     stepName: record.stepName,
   });
@@ -72,7 +73,7 @@ export async function updateStepRun(id: string, data: StepRunUpdate): Promise<vo
 
   const db = getDb();
   await db.update(stepRuns).set(data).where(eq(stepRuns.id, id));
-  logger.debug("Database: Step run updated", { stepRunId: id, status: data.status });
+  logger.debug("Step run updated in database", { stepRunId: id, status: data.status });
 }
 
 export type { NewPipelineRun, NewStepRun, PipelineRun, PipelineRunUpdate, StepRun, StepRunUpdate };

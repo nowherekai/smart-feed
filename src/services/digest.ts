@@ -10,7 +10,7 @@ import { type AppEnv, getAppEnv } from "../config";
 import { type AnalysisSummary, analysisRecords, contentItems, digestItems, digestReports, getDb, sources } from "../db";
 import { createCompletedStepResult, type PipelineStepResult } from "../pipeline/types";
 import { smartFeedTaskNames } from "../queue";
-import { getDigestWindow, logger } from "../utils";
+import { createLogger, getDigestWindow } from "../utils";
 import { type DigestRenderableItem, type DigestRenderSection, renderDigestMarkdown } from "./digest-renderer";
 import { canEnterDigest } from "./traceability";
 
@@ -66,6 +66,7 @@ type PersistDigestInput = {
   windowEnd: Date;
   windowStart: Date;
 };
+const logger = createLogger("DigestService");
 
 /** 编排任务输入数据 */
 export type DigestComposeJobData = {

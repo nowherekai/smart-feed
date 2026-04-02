@@ -8,11 +8,12 @@ import type { SmartFeedTaskName } from "../../queue";
 import { type ContentAnalyzeBasicPayload, runContentAnalyzeBasic } from "../../services/analysis";
 import type { ContentAnalyzeBasicJobData } from "../../services/content";
 import { type ContentPipelineRuntimeDeps, executeContentPipelineStep } from "../../services/pipeline-runtime";
-import { logger } from "../../utils";
+import { createLogger } from "../../utils";
 import type { PipelineStepExecutionResult } from "../types";
 
 /** 基础分析流水线结果类型 */
 export type ContentAnalyzeBasicPipelineResult = PipelineStepExecutionResult<ContentAnalyzeBasicPayload>;
+const logger = createLogger("HandlerContentAnalyzeBasic");
 
 /**
  * 创建内容基础分析处理器
@@ -28,7 +29,7 @@ export function createContentAnalyzeBasicHandler(
   return async function contentAnalyzeBasicHandler(
     job: Job<ContentAnalyzeBasicJobData, ContentAnalyzeBasicPipelineResult, SmartFeedTaskName>,
   ): Promise<ContentAnalyzeBasicPipelineResult> {
-    logger.info(`[handler] ${job.name} started`, {
+    logger.info("Handler started", {
       attemptsMade: job.attemptsMade,
       contentId: job.data.contentId,
       jobId: job.id,
@@ -45,7 +46,7 @@ export function createContentAnalyzeBasicHandler(
         runStep: runAnalyzeBasic,
       });
 
-      logger.info(`[handler] ${job.name} completed`, {
+      logger.info("Handler completed", {
         attemptsMade: job.attemptsMade,
         contentId: job.data.contentId,
         jobId: job.id,
@@ -57,7 +58,7 @@ export function createContentAnalyzeBasicHandler(
 
       return result;
     } catch (error) {
-      logger.error(`[handler] ${job.name} failed`, {
+      logger.error("Handler failed", {
         attemptsMade: job.attemptsMade,
         contentId: job.data.contentId,
         error: error instanceof Error ? error.message : "Unknown handler error.",

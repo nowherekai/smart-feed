@@ -7,12 +7,13 @@ import type { Job } from "bullmq";
 
 import type { SmartFeedTaskName } from "../../queue";
 import { runSourceFetch, type SourceFetchJobData, type SourceFetchSummary } from "../../services/content";
-import { logger } from "../../utils";
+import { createLogger } from "../../utils";
 
 /** 来源抓取任务结果类型 */
 export type SourceFetchPipelineResult = SourceFetchSummary & {
   jobName: string;
 };
+const logger = createLogger("HandlerSourceFetch");
 
 /**
  * 创建来源抓取处理器
@@ -24,7 +25,7 @@ export function createSourceFetchHandler(
   return async function sourceFetchHandler(
     job: Job<SourceFetchJobData, SourceFetchPipelineResult, SmartFeedTaskName>,
   ): Promise<SourceFetchPipelineResult> {
-    logger.info(`[handler] ${job.name} started`, {
+    logger.info("Handler started", {
       jobId: job.id,
       sourceId: job.data.sourceId,
       trigger: job.data.trigger,
