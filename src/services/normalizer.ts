@@ -7,7 +7,7 @@
 import { DOMParser } from "linkedom";
 import TurndownService from "turndown";
 
-import { logger } from "../utils";
+import { logger, sanitizeUrlForLogging } from "../utils";
 import type { RawContentFormat } from "./html-fetcher";
 
 /** 最终 Markdown 的最大字节数限制，防止 AI 处理成本过高 */
@@ -300,16 +300,17 @@ function normalizePlainTextToMarkdown(input: NormalizeRawContentInput): string {
  */
 export function normalizeRawContent(input: NormalizeRawContentInput): NormalizeRawContentResult {
   const rawBody = input.rawBody.trim();
+  const safeUrlToLog = sanitizeUrlForLogging(input.originalUrl);
 
   logger.info("Normalizing raw content", {
     format: input.format,
-    url: input.originalUrl,
+    url: safeUrlToLog,
     rawLength: rawBody.length,
   });
 
   if (!rawBody) {
     const errorMsg = "[services/normalizer] rawBody is empty.";
-    logger.error(errorMsg, { url: input.originalUrl });
+    logger.error(errorMsg, { url: safeUrlToLog });
     throw new Error(errorMsg);
   }
 
@@ -321,7 +322,7 @@ export function normalizeRawContent(input: NormalizeRawContentInput): NormalizeR
     const result = truncateMarkdown(cleanMarkdown(markdown));
 
     logger.info("Content normalization completed", {
-      url: input.originalUrl,
+      url: safeUrlToLog,
       detectedAsHtml: isActuallyHtml,
       finalLength: result.markdown.length,
       truncated: result.truncated,
@@ -330,7 +331,7 @@ export function normalizeRawContent(input: NormalizeRawContentInput): NormalizeR
     return result;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown normalization error";
-    logger.error("Content normalization failed", { error: errorMessage, url: input.originalUrl });
+    logger.error("Content normalization failed", { error: errorMessage, url: safeUrlToLog });
     throw error;
   }
 }
