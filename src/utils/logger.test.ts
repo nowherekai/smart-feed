@@ -80,3 +80,22 @@ test("createLogger omits empty context suffix", () => {
     console.info = originalInfo;
   }
 });
+
+test("createLogger serializes bigint context safely", () => {
+  const infoSpy = mock(() => undefined);
+  const originalInfo = console.info;
+  console.info = infoSpy;
+
+  try {
+    createLogger("WorkerMain").info("Worker server started", {
+      jobId: 123n,
+    });
+
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    const logLine = String(infoSpy.mock.calls.at(0)?.at(0) ?? "");
+    expect(logLine).toContain("[INFO] [WorkerMain] Worker server started");
+    expect(logLine).toContain('"jobId":"123"');
+  } finally {
+    console.info = originalInfo;
+  }
+});

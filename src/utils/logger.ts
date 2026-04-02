@@ -37,9 +37,25 @@ function getWriter(level: LogLevel) {
         : console.error;
 }
 
+function serializeContext(context: LogContext): string | null {
+  if (Object.keys(context).length === 0) {
+    return null;
+  }
+
+  try {
+    return JSON.stringify(context, (_key, value) => (typeof value === "bigint" ? value.toString() : value));
+  } catch (error) {
+    return JSON.stringify({
+      contextKeys: Object.keys(context),
+      error: error instanceof Error ? error.message : "Unknown log serialization error",
+    });
+  }
+}
+
 function formatLogLine(entry: LogEntry): string {
   const prefix = `[${entry.ts}] [${entry.level.toUpperCase()}] [${entry.component}] ${entry.message}`;
-  return Object.keys(entry.context).length > 0 ? `${prefix} ${JSON.stringify(entry.context)}` : prefix;
+  const serializedContext = serializeContext(entry.context);
+  return serializedContext ? `${prefix} ${serializedContext}` : prefix;
 }
 
 function writeLog(component: string, level: LogLevel, message: string, context: LogContext = {}): LogEntry {
