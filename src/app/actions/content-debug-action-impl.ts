@@ -8,6 +8,7 @@ import type {
   ContentAnalyzeBasicJobData,
   ContentAnalyzeHeavyJobData,
 } from "@/services/content";
+import { logger } from "@/utils";
 
 export type ContentDebugActionResult = {
   success: boolean;
@@ -83,6 +84,19 @@ function buildDebugOptions(input: ContentDebugActionInput) {
   } as const;
 }
 
+function summarizeDebugOptions(
+  debugOptions: ContentAnalyzeBasicJobData["debugOptions"] | ContentAnalyzeHeavyJobData["debugOptions"] | undefined,
+) {
+  return debugOptions
+    ? {
+        continueToHeavy: debugOptions.continueToHeavy ?? false,
+        hasRerunKey: Boolean(debugOptions.rerunKey),
+        recordMode: debugOptions.recordMode,
+        variantTag: debugOptions.variantTag ?? null,
+      }
+    : null;
+}
+
 function describeRunMode(input: ContentDebugActionInput): string {
   const modeLabel = input.recordMode === "new-record" ? "new record" : "overwrite";
   const variantTag = normalizeDebugVariantTag(input.variantTag);
@@ -103,8 +117,19 @@ export async function enqueueBasicAnalysisImpl(
   deps: ContentDebugActionDeps = {},
 ): Promise<ContentDebugActionResult> {
   const normalizedContentId = normalizeContentId(input.contentId);
+  const variantTag = normalizeDebugVariantTag(input.variantTag);
+
+  logger.info("content debug action requested: basic", {
+    contentId: normalizedContentId,
+    originalContentId: input.contentId,
+    recordMode: input.recordMode,
+    variantTag,
+  });
 
   if (!normalizedContentId) {
+    logger.warn("content debug action rejected: basic missing contentId", {
+      originalContentId: input.contentId,
+    });
     return {
       success: false,
       message: "Content id is required.",
@@ -115,13 +140,25 @@ export async function enqueueBasicAnalysisImpl(
   const content = await resolvedDeps.getContentState(normalizedContentId);
 
   if (!content) {
+    logger.warn("content debug action rejected: basic content not found", {
+      contentId: normalizedContentId,
+    });
     return {
       success: false,
       message: "Content not found.",
     };
   }
 
+  logger.info("content debug action loaded content state: basic", {
+    cleanedMdLength: content.cleanedMd?.length ?? 0,
+    contentId: normalizedContentId,
+    hasCleanedMd: Boolean(content.cleanedMd?.trim()),
+  });
+
   if (!content.cleanedMd?.trim()) {
+    logger.warn("content debug action rejected: basic requires normalized content", {
+      contentId: normalizedContentId,
+    });
     return {
       success: false,
       message: "Requires normalized content before queuing basic analysis.",
@@ -138,13 +175,32 @@ export async function enqueueBasicAnalysisImpl(
   };
 
   try {
+    logger.info("content debug action enqueue started: basic", {
+      contentId: normalizedContentId,
+      debugOptions: summarizeDebugOptions(jobData.debugOptions),
+      taskName: smartFeedTaskNames.contentAnalyzeBasic,
+      trigger: jobData.trigger,
+    });
     await resolvedDeps.enqueueJob(smartFeedTaskNames.contentAnalyzeBasic, jobData);
+    logger.info("content debug action enqueue succeeded: basic", {
+      contentId: normalizedContentId,
+      debugOptions: summarizeDebugOptions(jobData.debugOptions),
+      taskName: smartFeedTaskNames.contentAnalyzeBasic,
+      trigger: jobData.trigger,
+    });
 
     return {
       success: true,
       message: `Basic analysis job queued for ${describeRunMode(input)}.`,
     };
   } catch (error) {
+    logger.error("content debug action enqueue failed: basic", {
+      contentId: normalizedContentId,
+      debugOptions: summarizeDebugOptions(jobData.debugOptions),
+      error: error instanceof Error ? error.message : "Unknown queue error.",
+      taskName: smartFeedTaskNames.contentAnalyzeBasic,
+      trigger: jobData.trigger,
+    });
     return {
       success: false,
       message: toFailureMessage("Failed to queue basic analysis", error),
@@ -157,8 +213,19 @@ export async function enqueueHeavyAnalysisImpl(
   deps: ContentDebugActionDeps = {},
 ): Promise<ContentDebugActionResult> {
   const normalizedContentId = normalizeContentId(input.contentId);
+  const variantTag = normalizeDebugVariantTag(input.variantTag);
+
+  logger.info("content debug action requested: heavy", {
+    contentId: normalizedContentId,
+    originalContentId: input.contentId,
+    recordMode: input.recordMode,
+    variantTag,
+  });
 
   if (!normalizedContentId) {
+    logger.warn("content debug action rejected: heavy missing contentId", {
+      originalContentId: input.contentId,
+    });
     return {
       success: false,
       message: "Content id is required.",
@@ -169,15 +236,32 @@ export async function enqueueHeavyAnalysisImpl(
   const content = await resolvedDeps.getContentState(normalizedContentId);
 
   if (!content) {
+    logger.warn("content debug action rejected: heavy content not found", {
+      contentId: normalizedContentId,
+    });
     return {
       success: false,
       message: "Content not found.",
     };
   }
 
+  logger.info("content debug action loaded content state: heavy", {
+    cleanedMdLength: content.cleanedMd?.length ?? 0,
+    contentId: normalizedContentId,
+    hasCleanedMd: Boolean(content.cleanedMd?.trim()),
+  });
+
   const canRunHeavy = await resolvedDeps.hasBasicAnalysisRecord(normalizedContentId);
 
+  logger.info("content debug action checked heavy prerequisite", {
+    canRunHeavy,
+    contentId: normalizedContentId,
+  });
+
   if (!canRunHeavy) {
+    logger.warn("content debug action rejected: heavy requires basic analysis record", {
+      contentId: normalizedContentId,
+    });
     return {
       success: false,
       message: "Requires at least one basic analysis record before queuing heavy analysis.",
@@ -191,13 +275,32 @@ export async function enqueueHeavyAnalysisImpl(
   };
 
   try {
+    logger.info("content debug action enqueue started: heavy", {
+      contentId: normalizedContentId,
+      debugOptions: summarizeDebugOptions(jobData.debugOptions),
+      taskName: smartFeedTaskNames.contentAnalyzeHeavy,
+      trigger: jobData.trigger,
+    });
     await resolvedDeps.enqueueJob(smartFeedTaskNames.contentAnalyzeHeavy, jobData);
+    logger.info("content debug action enqueue succeeded: heavy", {
+      contentId: normalizedContentId,
+      debugOptions: summarizeDebugOptions(jobData.debugOptions),
+      taskName: smartFeedTaskNames.contentAnalyzeHeavy,
+      trigger: jobData.trigger,
+    });
 
     return {
       success: true,
       message: `Heavy analysis job queued for ${describeRunMode(input)}.`,
     };
   } catch (error) {
+    logger.error("content debug action enqueue failed: heavy", {
+      contentId: normalizedContentId,
+      debugOptions: summarizeDebugOptions(jobData.debugOptions),
+      error: error instanceof Error ? error.message : "Unknown queue error.",
+      taskName: smartFeedTaskNames.contentAnalyzeHeavy,
+      trigger: jobData.trigger,
+    });
     return {
       success: false,
       message: toFailureMessage("Failed to queue heavy analysis", error),
@@ -210,8 +313,19 @@ export async function enqueueFullAiFlowImpl(
   deps: ContentDebugActionDeps = {},
 ): Promise<ContentDebugActionResult> {
   const normalizedContentId = normalizeContentId(input.contentId);
+  const variantTag = normalizeDebugVariantTag(input.variantTag);
+
+  logger.info("content debug action requested: full", {
+    contentId: normalizedContentId,
+    originalContentId: input.contentId,
+    recordMode: input.recordMode,
+    variantTag,
+  });
 
   if (!normalizedContentId) {
+    logger.warn("content debug action rejected: full missing contentId", {
+      originalContentId: input.contentId,
+    });
     return {
       success: false,
       message: "Content id is required.",
@@ -222,13 +336,25 @@ export async function enqueueFullAiFlowImpl(
   const content = await resolvedDeps.getContentState(normalizedContentId);
 
   if (!content) {
+    logger.warn("content debug action rejected: full content not found", {
+      contentId: normalizedContentId,
+    });
     return {
       success: false,
       message: "Content not found.",
     };
   }
 
+  logger.info("content debug action loaded content state: full", {
+    cleanedMdLength: content.cleanedMd?.length ?? 0,
+    contentId: normalizedContentId,
+    hasCleanedMd: Boolean(content.cleanedMd?.trim()),
+  });
+
   if (!content.cleanedMd?.trim()) {
+    logger.warn("content debug action rejected: full requires normalized content", {
+      contentId: normalizedContentId,
+    });
     return {
       success: false,
       message: "Requires normalized content before queuing the full AI flow.",
@@ -245,13 +371,32 @@ export async function enqueueFullAiFlowImpl(
   };
 
   try {
+    logger.info("content debug action enqueue started: full", {
+      contentId: normalizedContentId,
+      debugOptions: summarizeDebugOptions(jobData.debugOptions),
+      taskName: smartFeedTaskNames.contentAnalyzeBasic,
+      trigger: jobData.trigger,
+    });
     await resolvedDeps.enqueueJob(smartFeedTaskNames.contentAnalyzeBasic, jobData);
+    logger.info("content debug action enqueue succeeded: full", {
+      contentId: normalizedContentId,
+      debugOptions: summarizeDebugOptions(jobData.debugOptions),
+      taskName: smartFeedTaskNames.contentAnalyzeBasic,
+      trigger: jobData.trigger,
+    });
 
     return {
       success: true,
       message: `Full AI flow entry job queued for ${describeRunMode(input)}. Heavy analysis will continue only if the basic score passes threshold.`,
     };
   } catch (error) {
+    logger.error("content debug action enqueue failed: full", {
+      contentId: normalizedContentId,
+      debugOptions: summarizeDebugOptions(jobData.debugOptions),
+      error: error instanceof Error ? error.message : "Unknown queue error.",
+      taskName: smartFeedTaskNames.contentAnalyzeBasic,
+      trigger: jobData.trigger,
+    });
     return {
       success: false,
       message: toFailureMessage("Failed to queue the full AI flow", error),

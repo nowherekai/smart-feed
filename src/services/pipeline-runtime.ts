@@ -48,6 +48,58 @@ type ExecuteContentPipelineStepOptions<
   runStep: (jobData: TJobData) => Promise<PipelineStepResult<TPayload>>;
 };
 
+function summarizeDebugOptions(debugOptions: unknown) {
+  if (!debugOptions || typeof debugOptions !== "object" || !("recordMode" in debugOptions)) {
+    return null;
+  }
+
+  const value = debugOptions as {
+    continueToHeavy?: boolean;
+    recordMode?: string;
+    rerunKey?: string | null;
+    variantTag?: string | null;
+  };
+
+  return {
+    continueToHeavy: value.continueToHeavy ?? false,
+    hasRerunKey: Boolean(value.rerunKey),
+    recordMode: value.recordMode ?? null,
+    variantTag: value.variantTag ?? null,
+  };
+}
+
+function summarizeContentJobData(jobData: ContentPipelineJobData) {
+  const extendedJobData = jobData as ContentPipelineJobData & {
+    debugOptions?: unknown;
+  };
+
+  return {
+    contentId: jobData.contentId,
+    debugOptions: summarizeDebugOptions(extendedJobData.debugOptions),
+    pipelineRunId: jobData.pipelineRunId ?? null,
+    trigger: jobData.trigger,
+  };
+}
+
+function summarizeRecordData(data: Record<string, unknown>) {
+  return {
+    contentId: typeof data.contentId === "string" ? data.contentId : null,
+    debugOptions: summarizeDebugOptions(data.debugOptions),
+    pipelineRunId: typeof data.pipelineRunId === "string" ? data.pipelineRunId : null,
+    trigger: typeof data.trigger === "string" ? data.trigger : null,
+  };
+}
+
+function summarizeStepResult<TPayload extends Record<string, unknown>>(result: PipelineStepResult<TPayload>) {
+  return {
+    message: result.message ?? null,
+    nextStepJobName: result.nextStep?.jobName ?? null,
+    outcome: result.outcome,
+    payloadKeys: result.payload ? Object.keys(result.payload) : [],
+    status: result.status,
+  };
+}
+
 /** 序列化辅助函数，用于记录输入输出到数据库 */
 function serialize(value: unknown): string | null {
   if (value === undefined) {
@@ -112,6 +164,11 @@ export async function executeContentPipelineStep<
 
   let pipelineRunId = jobData.pipelineRunId;
 
+  logger.info("Pipeline step received", {
+    jobName,
+    ...summarizeContentJobData(jobData),
+  });
+
   // 1. 若没有传入 pipelineRunId，说明是流水线的起点，创建一个新的运行记录
   if (!pipelineRunId) {
     const pipelineRun = await deps.createPipelineRun({
@@ -133,7 +190,10 @@ export async function executeContentPipelineStep<
     await deps.updatePipelineRun(pipelineRunId, {
       status: "running",
     });
-    logger.debug("Pipeline run continued", { pipelineRunId, stepName: jobName });
+    logger.debug("Pipeline run continued", {
+      pipelineRunId,
+      stepName: jobName,
+    });
   }
 
   // 2. 记录当前步骤的开始
@@ -145,7 +205,8 @@ export async function executeContentPipelineStep<
     stepName: jobName,
   });
 
-  logger.info(`Step execution started: ${jobName}`, {
+  logger.info(`Step run created: ${jobName}`, {
+    inputSummary: summarizeContentJobData(jobData),
     pipelineRunId,
     stepRunId: stepRun.id,
     jobName,
@@ -154,6 +215,11 @@ export async function executeContentPipelineStep<
   try {
     // 3. 执行核心业务逻辑
     const result = await runStep(jobData);
+    logger.info(`Step execution returned result: ${jobName}`, {
+      ...summarizeStepResult(result),
+      pipelineRunId,
+      stepRunId: stepRun.id,
+    });
     const outputRef = serialize({
       message: result.message ?? null,
       nextStep: result.nextStep
@@ -205,6 +271,8 @@ export async function executeContentPipelineStep<
     if (result.nextStep) {
       // 注入 pipelineRunId 实现跨 Job 追踪
       logger.info(`Enqueueing next step: ${result.nextStep.jobName}`, {
+        currentStepName: jobName,
+        nextStepData: summarizeRecordData(withPipelineRunId(result.nextStep.data, pipelineRunId)),
         pipelineRunId,
         nextStep: result.nextStep.jobName,
       });
@@ -224,6 +292,7 @@ export async function executeContentPipelineStep<
     });
 
     logger.info(`Step execution completed: ${jobName}`, {
+      message: result.message ?? null,
       pipelineRunId,
       stepRunId: stepRun.id,
       outcome: result.outcome,
@@ -254,6 +323,7 @@ export async function executeContentPipelineStep<
     const errorMessage = toErrorMessage(error);
 
     logger.error(`Step execution crashed: ${jobName}`, {
+      contentId: jobData.contentId,
       pipelineRunId,
       stepRunId: stepRun.id,
       error: errorMessage,

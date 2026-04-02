@@ -70,6 +70,30 @@ function getHandler(jobName: string) {
   return handler;
 }
 
+function extractJobContext(job: Job<PipelineJobData, PipelineJobResult, SmartFeedTaskName> | undefined) {
+  const data = (job?.data ?? {}) as PipelineJobData & {
+    contentId?: string;
+    digestId?: string;
+    importRunId?: string;
+    pipelineRunId?: string;
+    sourceId?: string;
+    trigger?: string;
+  };
+
+  return {
+    attemptsMade: job?.attemptsMade ?? null,
+    contentId: data.contentId ?? null,
+    digestId: data.digestId ?? null,
+    importRunId: data.importRunId ?? null,
+    jobId: job?.id ?? null,
+    pipelineRunId: data.pipelineRunId ?? null,
+    queueName: job?.queueName ?? null,
+    sourceId: data.sourceId ?? null,
+    taskName: job?.name ?? null,
+    trigger: data.trigger ?? null,
+  };
+}
+
 /**
  * 启动 Worker 应用主逻辑
  * 1. 初始化 Worker
@@ -93,12 +117,24 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
   const makeProcessor =
     (allowedTaskNames: ReadonlySet<SmartFeedTaskName>) =>
     async (job: Job<PipelineJobData, PipelineJobResult, SmartFeedTaskName>): Promise<PipelineJobResult> => {
+      logger.info("[worker] Picked up job", extractJobContext(job));
+
       if (!allowedTaskNames.has(job.name)) {
         throw new Error(`[worker] Task "${job.name}" is not handled by this worker.`);
       }
 
       const handler = getHandler(job.name);
-      return handler(job);
+      const result = await handler(job);
+
+      logger.info("[worker] Job completed", {
+        ...extractJobContext(job),
+        message: "message" in result && typeof result.message === "string" ? result.message : null,
+        nextStepQueued: "nextStepQueued" in result ? result.nextStepQueued : null,
+        outcome: "outcome" in result ? result.outcome : null,
+        status: "status" in result ? result.status : null,
+      });
+
+      return result;
     };
 
   const workers = [
@@ -126,7 +162,10 @@ export async function startWorkerApp(deps: WorkerAppDeps = {}): Promise<WorkerAp
     });
 
     worker.on("failed", (job, error) => {
-      logger.error(`[worker] Job ${job?.id ?? "unknown"} failed.`, error);
+      logger.error("[worker] Job failed", {
+        ...extractJobContext(job),
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
   }
 
