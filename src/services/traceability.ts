@@ -4,7 +4,7 @@
  * 落实“现实约束”：所有 AI 生成的内容必须可追溯到原始来源、链接和原文片段。
  */
 
-import { logger } from "../utils";
+import { createLogger } from "../utils";
 
 type DigestEligibleRecord = {
   /** 内容可追溯 ID */
@@ -18,6 +18,7 @@ type DigestEligibleRecord = {
   /** 来源可追溯 ID */
   sourceTraceId?: string | null;
 };
+const logger = createLogger("TraceabilityService");
 
 /**
  * 判断记录是否符合进入摘要的标准

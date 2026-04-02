@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import { type AppEnv, getAppEnv } from "../config";
 import { digestReports, getDb } from "../db";
 import { createCompletedStepResult, createFailedStepResult, type PipelineStepResult } from "../pipeline/types";
-import { logger } from "../utils";
+import { createLogger } from "../utils";
 import { type DigestDeliverJobData, getEmailSubject } from "./digest";
 import { type EmailTransportConfig, sendDigestEmail } from "./email";
 
@@ -20,6 +20,7 @@ type EmailDeliveryEnv = Pick<
   AppEnv,
   "emailDeliveryEnabled" | "smtpFrom" | "smtpHost" | "smtpPass" | "smtpPort" | "smtpTo" | "smtpUser"
 >;
+const logger = createLogger("DigestDeliveryService");
 
 /** 摘要投递业务载荷 */
 export type DigestDeliverPayload = {
@@ -154,7 +155,7 @@ export async function runDigestDeliver(
   // 1. 基础校验
   if (!report) {
     const message = `[services/digest-delivery] Digest "${jobData.digestId}" not found.`;
-    logger.error(message, { digestId: jobData.digestId });
+    logger.error("Digest report not found", { digestId: jobData.digestId });
     return createFailedStepResult({
       message,
       payload: buildPayload({
@@ -230,7 +231,7 @@ export async function runDigestDeliver(
   // 4. 内容完整性校验
   if (!report.markdownBody?.trim()) {
     const message = `[services/digest-delivery] Digest "${report.id}" has empty markdown body.`;
-    logger.error(message, {
+    logger.error("Digest report has empty markdown body", {
       digestId: report.id,
       trigger: jobData.trigger,
     });

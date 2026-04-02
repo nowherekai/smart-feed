@@ -7,7 +7,7 @@ import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { XMLParser } from "fast-xml-parser";
 
 import { getDb, sources } from "../db";
-import { logger, normalizeUrl } from "../utils";
+import { createLogger, normalizeUrl } from "../utils";
 
 /** 快速 XML 解析器配置，用于提取 Feed 元数据 */
 const feedParser = new XMLParser({
@@ -20,6 +20,7 @@ const feedParser = new XMLParser({
 
 /** 抓取时使用的 User-Agent */
 const SMART_FEED_USER_AGENT = "smart-feed/1.0 (+https://github.com/nowherekai/smart-feed)";
+const logger = createLogger("SourceService");
 
 /** Feed 元数据子集 */
 type FeedMetadata = {
@@ -188,7 +189,7 @@ export async function verifyAndPrepareRssSource(
 
     if (!response.ok) {
       const errorMsg = `[services/source] Source URL returned ${response.status}.`;
-      logger.error(errorMsg, { url: normalizedUrl, status: response.status });
+      logger.error("Source URL returned non-success status", { url: normalizedUrl, status: response.status });
       throw new Error(errorMsg);
     }
 
@@ -196,7 +197,7 @@ export async function verifyAndPrepareRssSource(
 
     if (!body.trim()) {
       const errorMsg = "[services/source] Source URL returned an empty response.";
-      logger.warn(errorMsg, { url: normalizedUrl });
+      logger.warn("Source URL returned an empty response", { url: normalizedUrl });
       throw new Error(errorMsg);
     }
 

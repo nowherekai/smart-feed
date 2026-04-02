@@ -7,7 +7,7 @@ import type { Job } from "bullmq";
 
 import type { SmartFeedTaskName } from "../../queue";
 import { runSourceImport, type SourceImportJobData } from "../../services/source-import";
-import { logger } from "../../utils";
+import { createLogger } from "../../utils";
 
 /** 来源导入流水线结果类型 */
 export type SourceImportPipelineResult = {
@@ -27,6 +27,7 @@ export type SourceImportPipelineResult = {
   /** 导入失败的数量 */
   failedCount: number;
 };
+const logger = createLogger("HandlerSourceImport");
 
 /**
  * 来源导入处理器函数
@@ -35,7 +36,7 @@ export type SourceImportPipelineResult = {
 export async function sourceImportHandler(
   job: Job<SourceImportJobData, SourceImportPipelineResult, SmartFeedTaskName>,
 ): Promise<SourceImportPipelineResult> {
-  logger.info(`[handler] ${job.name} started`, {
+  logger.info("Handler started", {
     jobId: job.id,
     mode: job.data.mode,
   });

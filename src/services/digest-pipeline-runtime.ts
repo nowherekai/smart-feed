@@ -6,7 +6,7 @@
 
 import type { PipelineStepExecutionResult, PipelineStepResult } from "../pipeline/types";
 import { getQueueForTask, type SmartFeedTaskName } from "../queue";
-import { logger } from "../utils";
+import { createLogger } from "../utils";
 import {
   createPipelineRun,
   createStepRun,
@@ -19,6 +19,7 @@ import {
 /** 摘要流水线的名称与版本 */
 const DIGEST_PIPELINE_NAME = "digest-generation";
 const DIGEST_PIPELINE_VERSION = "v1";
+const logger = createLogger("DigestPipelineRuntime");
 
 type EnqueueJob = (taskName: SmartFeedTaskName, data: Record<string, unknown>) => Promise<void>;
 
@@ -128,7 +129,7 @@ export async function executeDigestPipelineStep<
     });
 
     pipelineRunId = pipelineRun.id;
-    logger.info("Digest pipeline run started", {
+    logger.info("Pipeline run started", {
       pipelineRunId,
       pipelineName: DIGEST_PIPELINE_NAME,
     });
@@ -136,7 +137,7 @@ export async function executeDigestPipelineStep<
     await deps.updatePipelineRun(pipelineRunId, {
       status: "running",
     });
-    logger.debug("Digest pipeline run continued", { pipelineRunId, stepName: jobName });
+    logger.debug("Pipeline run continued", { pipelineRunId, stepName: jobName });
   }
 
   // 2. 记录步骤开始
@@ -148,7 +149,7 @@ export async function executeDigestPipelineStep<
     stepName: jobName,
   });
 
-  logger.info(`Digest step execution started: ${jobName}`, {
+  logger.info("Step execution started", {
     pipelineRunId,
     stepRunId: stepRun.id,
     jobName,
@@ -181,9 +182,10 @@ export async function executeDigestPipelineStep<
     if (result.status === "failed") {
       const finishedAt = deps.now();
 
-      logger.warn(`Digest step execution failed business logic: ${jobName}`, {
+      logger.warn("Step execution failed business logic", {
         pipelineRunId,
         stepRunId: stepRun.id,
+        jobName,
         message: result.message,
       });
 
@@ -216,7 +218,7 @@ export async function executeDigestPipelineStep<
     let nextStepQueued = false;
 
     if (result.nextStep) {
-      logger.info(`Enqueueing next digest step: ${result.nextStep.jobName}`, {
+      logger.info("Enqueueing next step", {
         pipelineRunId,
         nextStep: result.nextStep.jobName,
       });
@@ -234,9 +236,10 @@ export async function executeDigestPipelineStep<
       status: "completed",
     });
 
-    logger.info(`Digest step execution completed: ${jobName}`, {
+    logger.info("Step execution completed", {
       pipelineRunId,
       stepRunId: stepRun.id,
+      jobName,
       outcome: result.outcome,
       nextStepQueued,
     });
@@ -250,7 +253,7 @@ export async function executeDigestPipelineStep<
         }),
       );
     } else {
-      logger.info("Digest pipeline run completed", { pipelineRunId });
+      logger.info("Pipeline run completed", { pipelineRunId });
       await deps.updatePipelineRun(
         pipelineRunId,
         buildPipelineUpdate(digestId, {
@@ -274,9 +277,10 @@ export async function executeDigestPipelineStep<
     const finishedAt = deps.now();
     const errorMessage = error instanceof Error && error.message ? error.message : "Unknown pipeline runtime error.";
 
-    logger.error(`Digest step execution crashed: ${jobName}`, {
+    logger.error("Step execution crashed", {
       pipelineRunId,
       stepRunId: stepRun.id,
+      jobName,
       error: errorMessage,
     });
 

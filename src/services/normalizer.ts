@@ -7,11 +7,12 @@
 import { DOMParser } from "linkedom";
 import TurndownService from "turndown";
 
-import { logger, sanitizeUrlForLogging } from "../utils";
+import { createLogger, sanitizeUrlForLogging } from "../utils";
 import type { RawContentFormat } from "./html-fetcher";
 
 /** 最终 Markdown 的最大字节数限制，防止 AI 处理成本过高 */
 const MAX_MARKDOWN_BYTES = 50 * 1024;
+const logger = createLogger("NormalizerService");
 
 /** 需要移除的常见噪音元素选择器 */
 const NOISE_SELECTORS = [
@@ -310,7 +311,7 @@ export function normalizeRawContent(input: NormalizeRawContentInput): NormalizeR
 
   if (!rawBody) {
     const errorMsg = "[services/normalizer] rawBody is empty.";
-    logger.error(errorMsg, { url: safeUrlToLog });
+    logger.error("rawBody is empty", { url: safeUrlToLog });
     throw new Error(errorMsg);
   }
 

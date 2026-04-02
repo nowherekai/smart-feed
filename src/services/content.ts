@@ -11,7 +11,7 @@ import { contentItemRaws, contentItems, getDb, sources } from "../db";
 import { type ParsedRssFeed, type ParsedRssItem, parseRssFeed } from "../parsers";
 import { createCompletedStepResult, createFailedStepResult, type PipelineStepResult } from "../pipeline/types";
 import { getQueueForTask, smartFeedTaskNames } from "../queue";
-import { getEffectiveTime, isInTimeWindow, logger } from "../utils";
+import { createLogger, getEffectiveTime, isInTimeWindow } from "../utils";
 import { fetchPageHtml, getRawBodyExcerptCandidate } from "./html-fetcher";
 import { normalizeRawContent } from "./normalizer";
 
@@ -33,6 +33,7 @@ type ContentWithRaw = {
   content: ContentItemRecord;
   raw: ContentItemRawRecord | null;
 };
+const logger = createLogger("ContentService");
 
 /** 来源抓取 Job 数据 */
 export type SourceFetchJobData = {
@@ -460,7 +461,7 @@ export async function runSourceFetch(
   const source = await deps.getSourceById(jobData.sourceId);
 
   if (!source) {
-    logger.error(`[services/content] Source "${jobData.sourceId}" not found.`, { sourceId: jobData.sourceId });
+    logger.error("Source not found", { sourceId: jobData.sourceId });
     throw new Error(`[services/content] Source "${jobData.sourceId}" not found.`);
   }
 
@@ -694,7 +695,7 @@ export async function runContentFetchHtml(
 
   if (!record) {
     const message = `[services/content] Content "${jobData.contentId}" not found.`;
-    logger.error(message, { contentId: jobData.contentId });
+    logger.error("Content not found", { contentId: jobData.contentId });
     return createFailedStepResult({
       message,
       payload: {
@@ -707,7 +708,7 @@ export async function runContentFetchHtml(
 
   if (!record.raw) {
     const message = `[services/content] Raw content for "${jobData.contentId}" not found.`;
-    logger.error(message, { contentId: record.content.id });
+    logger.error("Raw content not found", { contentId: record.content.id });
 
     await deps.updateContentItem(record.content.id, {
       processingError: message,
@@ -832,7 +833,7 @@ export async function runContentNormalize(
 
   if (!record) {
     const message = `[services/content] Content "${jobData.contentId}" not found.`;
-    logger.error(message, { contentId: jobData.contentId });
+    logger.error("Content not found", { contentId: jobData.contentId });
     return createFailedStepResult({
       message,
       payload: {
@@ -845,7 +846,7 @@ export async function runContentNormalize(
 
   if (!record.raw) {
     const message = `[services/content] Raw content for "${jobData.contentId}" not found.`;
-    logger.error(message, { contentId: record.content.id });
+    logger.error("Raw content not found", { contentId: record.content.id });
 
     await deps.updateContentItem(record.content.id, {
       processingError: message,

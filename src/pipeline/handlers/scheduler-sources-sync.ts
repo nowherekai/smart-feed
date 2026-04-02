@@ -13,7 +13,7 @@ import {
 } from "../../queue";
 import type { SourceFetchJobData } from "../../services/content";
 import { listSourceIdsDueForSync } from "../../services/source";
-import { logger } from "../../utils";
+import { createLogger } from "../../utils";
 
 /** 调度同步任务输入数据类型 */
 export type SchedulerSourcesSyncJobData = {
@@ -34,6 +34,7 @@ export type SchedulerSourcesSyncDeps = {
   getSourceFetchQueue?: () => Queue<SourceFetchJobData, unknown, string>;
   listSourceIdsDueForSync?: () => Promise<string[]>;
 };
+const logger = createLogger("HandlerSchedulerSourcesSync");
 
 /**
  * 将单个来源的抓取任务入队，包含去重逻辑
@@ -78,7 +79,7 @@ export function createSchedulerSourcesSyncHandler(deps: SchedulerSourcesSyncDeps
   return async function schedulerSourcesSyncHandler(
     job: Job<SchedulerSourcesSyncJobData, SchedulerSourcesSyncPipelineResult, SmartFeedTaskName>,
   ): Promise<SchedulerSourcesSyncPipelineResult> {
-    logger.info(`[handler] ${job.name} started`, { jobId: job.id });
+    logger.info("Handler started", { jobId: job.id });
     // 1. 获取当前调度周期内需要同步的来源 ID
     const sourceIds = await getDueSourceIds();
     const queue = getSourceFetchQueue();

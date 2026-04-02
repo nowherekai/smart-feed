@@ -9,7 +9,7 @@
 
 import type { ContentPipelineJobData, PipelineStepExecutionResult, PipelineStepResult } from "../pipeline/types";
 import { getQueueForTask, type SmartFeedTaskName } from "../queue";
-import { logger } from "../utils";
+import { createLogger } from "../utils";
 import {
   createPipelineRun,
   createStepRun,
@@ -22,6 +22,7 @@ import {
 /** 内容处理流水线的固化名称与版本 */
 const CONTENT_PIPELINE_NAME = "content-processing";
 const CONTENT_PIPELINE_VERSION = "v1";
+const logger = createLogger("PipelineRuntime");
 
 /** 入队任务函数类型 */
 type EnqueueJob = (taskName: SmartFeedTaskName, data: Record<string, unknown>) => Promise<void>;
@@ -205,7 +206,7 @@ export async function executeContentPipelineStep<
     stepName: jobName,
   });
 
-  logger.info(`Step run created: ${jobName}`, {
+  logger.info("Step run created", {
     inputSummary: summarizeContentJobData(jobData),
     pipelineRunId,
     stepRunId: stepRun.id,
@@ -215,10 +216,11 @@ export async function executeContentPipelineStep<
   try {
     // 3. 执行核心业务逻辑
     const result = await runStep(jobData);
-    logger.info(`Step execution returned result: ${jobName}`, {
+    logger.info("Step execution returned result", {
       ...summarizeStepResult(result),
       pipelineRunId,
       stepRunId: stepRun.id,
+      jobName,
     });
     const outputRef = serialize({
       message: result.message ?? null,
@@ -237,9 +239,10 @@ export async function executeContentPipelineStep<
     if (result.status === "failed") {
       const finishedAt = deps.now();
 
-      logger.warn(`Step execution failed business logic: ${jobName}`, {
+      logger.warn("Step execution failed business logic", {
         pipelineRunId,
         stepRunId: stepRun.id,
+        jobName,
         message: result.message,
       });
 
@@ -270,7 +273,7 @@ export async function executeContentPipelineStep<
 
     if (result.nextStep) {
       // 注入 pipelineRunId 实现跨 Job 追踪
-      logger.info(`Enqueueing next step: ${result.nextStep.jobName}`, {
+      logger.info("Enqueueing next step", {
         currentStepName: jobName,
         nextStepData: summarizeRecordData(withPipelineRunId(result.nextStep.data, pipelineRunId)),
         pipelineRunId,
@@ -291,10 +294,11 @@ export async function executeContentPipelineStep<
       status: "completed",
     });
 
-    logger.info(`Step execution completed: ${jobName}`, {
+    logger.info("Step execution completed", {
       message: result.message ?? null,
       pipelineRunId,
       stepRunId: stepRun.id,
+      jobName,
       outcome: result.outcome,
       nextStepQueued,
     });
@@ -322,10 +326,11 @@ export async function executeContentPipelineStep<
     const finishedAt = deps.now();
     const errorMessage = toErrorMessage(error);
 
-    logger.error(`Step execution crashed: ${jobName}`, {
+    logger.error("Step execution crashed", {
       contentId: jobData.contentId,
       pipelineRunId,
       stepRunId: stepRun.id,
+      jobName,
       error: errorMessage,
     });
 

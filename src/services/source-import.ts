@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { getDb, sourceImportRunItems, sourceImportRuns } from "../db";
 import { type ParsedOpmlSource, parseOpml } from "../parsers";
 import { buildSourceFetchDeduplicationId, getQueueForTask, smartFeedTaskNames } from "../queue";
-import { logger, sanitizeUrlForLogging } from "../utils";
+import { createLogger, sanitizeUrlForLogging } from "../utils";
 import type { SourceFetchJobData } from "./content";
 import {
   createSource,
@@ -26,6 +26,7 @@ type SourceImportRunItemRecord = typeof sourceImportRunItems.$inferSelect;
 type SourceReference = Pick<SourceRecord, "id">;
 type SourceImportRunReference = Pick<SourceImportRunRecord, "id">;
 type SourceImportRunItemReference = Pick<SourceImportRunItemRecord, "id">;
+const logger = createLogger("SourceImportService");
 
 /** 来源导入任务输入数据 */
 export type SourceImportJobData =

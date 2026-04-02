@@ -1,4 +1,4 @@
-import { logger } from "../utils";
+import { createLogger } from "../utils";
 
 type DigestRenderableSummary = {
   oneline: string;
@@ -25,6 +25,7 @@ type RenderDigestMarkdownInput = {
   digestDate: string;
   sections: DigestRenderSection[];
 };
+const logger = createLogger("DigestRenderer");
 
 function sanitizeInlineText(value: string): string {
   return value.replace(/\r?\n+/g, " ").trim();
