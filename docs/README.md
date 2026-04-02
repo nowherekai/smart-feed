@@ -28,6 +28,7 @@
 | [020](changes/arch/020_sources-page-opml-import-entry-and-result-summary.md) | 2026-04-01 | Sources 页面 OPML 导入入口与结果摘要 |
 | [021](changes/arch/021_original-content-feed-page-and-filters.md) | 2026-04-02 | Original Content 时间流页面与筛选导航 |
 | [022](changes/arch/022_original-content-detail-page-and-ai-debug-entry.md) | 2026-04-02 | Original Content 详情页与 AI 调试入口 |
+| [023](changes/arch/023_service-layer-structured-logging-and-log-guardrails.md) | 2026-04-02 | 服务层结构化日志增强与日志边界收敛 |
 
 ### 运维变更
 

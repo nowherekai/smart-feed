@@ -6,6 +6,7 @@
 
 import { marked } from "marked";
 import nodemailer from "nodemailer";
+import { logger } from "../utils";
 
 type EmailTransportConfig = {
   from: string;
@@ -86,17 +87,42 @@ export async function sendEmail(input: SendEmailInput, overrides: SendEmailDeps 
     port: input.port,
     secure: input.port === 465, // 465 端口默认启用 SSL
   });
-  const info = await transport.sendMail({
-    from: input.from,
-    html: input.html,
+
+  logger.info("Attempting to send email via SMTP", {
+    host: input.host,
+    port: input.port,
+    recipient: input.to,
     subject: input.subject,
-    text: input.text,
-    to: input.to,
   });
 
-  return {
-    messageId: info.messageId,
-  };
+  try {
+    const info = await transport.sendMail({
+      from: input.from,
+      html: input.html,
+      subject: input.subject,
+      text: input.text,
+      to: input.to,
+    });
+
+    logger.info("Email sent successfully", {
+      messageId: info.messageId,
+      recipient: input.to,
+      subject: input.subject,
+    });
+
+    return {
+      messageId: info.messageId,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown SMTP error";
+    logger.error("Email sending failed", {
+      error: errorMessage,
+      host: input.host,
+      recipient: input.to,
+      subject: input.subject,
+    });
+    throw error;
+  }
 }
 
 /**
@@ -107,6 +133,11 @@ export async function sendDigestEmail(
   input: SendDigestEmailInput,
   overrides: SendEmailDeps = {},
 ): Promise<{ messageId?: string }> {
+  logger.info("Starting digest email preparation and delivery", {
+    recipient: input.to,
+    subject: input.subject,
+  });
+
   const content = await renderDigestEmail(input.markdownBody);
 
   return sendEmail(

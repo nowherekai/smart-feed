@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { hashUrl, normalizeUrl } from "./url";
+import { hashUrl, normalizeUrl, sanitizeUrlForLogging } from "./url";
 
 test("normalizeUrl canonicalizes host, ports, paths, hashes, and query order", () => {
   expect(normalizeUrl("HTTPS://Example.com:443/path/?b=2&a=1#fragment")).toBe("https://example.com/path?a=1&b=2");
@@ -13,4 +13,9 @@ test("hashUrl is stable across equivalent URLs", () => {
 
   expect(left).toHaveLength(64);
   expect(left).toBe(right);
+});
+
+test("sanitizeUrlForLogging strips query parameters and fragments", () => {
+  expect(sanitizeUrlForLogging("https://example.com/post?token=secret#frag")).toBe("https://example.com/post");
+  expect(sanitizeUrlForLogging("not-a-valid-url")).toBe("not-a-valid-url");
 });

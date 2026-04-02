@@ -5,6 +5,7 @@
  */
 
 import { DOMParser } from "linkedom";
+import { logger, sanitizeUrlForLogging } from "../utils";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -63,26 +64,46 @@ function getTextMetricsFromHtml(rawBody: string) {
  */
 export async function fetchPageHtml(url: string, deps: FetchPageHtmlDeps = {}): Promise<string> {
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const response = await fetchImpl(url, {
-    headers: {
-      accept: HTML_ACCEPT_HEADER,
-      "user-agent": SMART_FEED_USER_AGENT,
-    },
-    redirect: "follow",
-    signal: AbortSignal.timeout(15_000), // 15秒超时
-  });
+  const safeUrlToLog = sanitizeUrlForLogging(url);
+  logger.info("Fetching page HTML", { url: safeUrlToLog });
 
-  if (!response.ok) {
-    throw new Error(`[services/html-fetcher] Page fetch returned ${response.status}.`);
+  try {
+    const response = await fetchImpl(url, {
+      headers: {
+        accept: HTML_ACCEPT_HEADER,
+        "user-agent": SMART_FEED_USER_AGENT,
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(15_000), // 15秒超时
+    });
+
+    if (!response.ok) {
+      const errorMsg = `[services/html-fetcher] Page fetch returned ${response.status}.`;
+      logger.error(errorMsg, { url: safeUrlToLog, status: response.status });
+      throw new Error(errorMsg);
+    }
+
+    const html = await response.text();
+
+    if (!html.trim()) {
+      const errorMsg = "[services/html-fetcher] Page fetch returned an empty response.";
+      logger.warn(errorMsg, { url: safeUrlToLog });
+      throw new Error(errorMsg);
+    }
+
+    const isHtml = looksLikeHtml(html);
+    logger.info("Page HTML fetched successfully", {
+      url: safeUrlToLog,
+      htmlLength: html.length,
+      isHtml,
+    });
+
+    return isHtml ? html : `<html><body><pre>${html}</pre></body></html>`;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown fetch error";
+    logger.error("Page HTML fetch failed", { url: safeUrlToLog, error: errorMessage });
+    throw error;
   }
-
-  const html = await response.text();
-
-  if (!html.trim()) {
-    throw new Error("[services/html-fetcher] Page fetch returned an empty response.");
-  }
-
-  return looksLikeHtml(html) ? html : `<html><body><pre>${html}</pre></body></html>`;
 }
 
 /**

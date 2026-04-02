@@ -1,3 +1,5 @@
+import { logger } from "../utils";
+
 type DigestRenderableSummary = {
   oneline: string;
   points: string[];
@@ -53,6 +55,12 @@ function renderItem(item: DigestRenderableItem): string {
 
 export function renderDigestMarkdown(input: RenderDigestMarkdownInput): string {
   const header = `# [smart-feed] 日报 ${input.digestDate}`;
+
+  logger.debug("Rendering digest markdown", {
+    digestDate: input.digestDate,
+    sectionCount: input.sections.length,
+    totalItemCount: input.sections.reduce((count, section) => count + section.items.length, 0),
+  });
 
   if (input.sections.length === 0) {
     return [header, "", "本次统计区间内没有符合条件的内容。"].join("\n");

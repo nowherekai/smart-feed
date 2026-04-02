@@ -191,6 +191,8 @@ function sortDigestItems(left: DigestSectionItem, right: DigestSectionItem): num
 function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidate {
   const latestByContentId = new Map<string, DigestSectionItem>();
 
+  logger.info("Selecting digest candidates from rows", { rowCount: rows.length });
+
   for (const row of rows) {
     if (row.sourceStatus === "blocked") {
       continue;
@@ -210,6 +212,10 @@ function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidat
         sourceTraceId: row.sourceTraceId,
       })
     ) {
+      logger.debug("Content skipped from digest due to traceability check", {
+        contentId: row.contentId,
+        sourceName: row.sourceName,
+      });
       continue;
     }
 
@@ -257,6 +263,11 @@ function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidat
     items: sectionItems,
     title,
   }));
+
+  logger.info("Digest selection completed", {
+    candidateCount: items.length,
+    sectionCount: sections.length,
+  });
 
   return {
     items,
@@ -446,9 +457,20 @@ export async function runDigestCompose(
   );
   const digestDate = toDateLabel(windowEnd, deps.appEnv.digestTimeZone);
 
+  logger.info("Digest window calculated", {
+    digestDate,
+    windowEnd: windowEnd.toISOString(),
+    windowStart: windowStart.toISOString(),
+    latestSentAt: latestSentReport?.sentAt?.toISOString(),
+  });
+
   // 2. 幂等性检查
   const existingReport = await deps.findDigestReportByDate(digestDate);
   if (existingReport?.status === "sent") {
+    logger.info("digest.compose skipped because digest has already been sent", {
+      digestDate,
+      digestId: existingReport.id,
+    });
     return createCompletedStepResult({
       message: `digest.compose skipped because ${digestDate} has already been sent`,
       payload: buildPayload({
@@ -465,7 +487,8 @@ export async function runDigestCompose(
   }
 
   // 3. 执行核心编排
-  const digestCandidate = selectDigestCandidates(await deps.collectDigestRows(windowStart, windowEnd));
+  const collectedRows = await deps.collectDigestRows(windowStart, windowEnd);
+  const digestCandidate = selectDigestCandidates(collectedRows);
 
   // 4. 渲染 Markdown
   const markdownBody = deps.renderMarkdown({
@@ -473,6 +496,11 @@ export async function runDigestCompose(
     sections: digestCandidate.sections,
   });
   const emailSubject = getEmailSubject(digestDate);
+
+  logger.info("Markdown rendering completed", {
+    digestDate,
+    markdownSize: markdownBody.length,
+  });
 
   // 5. 持久化
   const digestId = await deps.persistDigest({
@@ -487,6 +515,13 @@ export async function runDigestCompose(
 
   const emptyDigest = digestCandidate.items.length === 0;
   const reusedExistingDigest = Boolean(existingReport);
+
+  logger.info("Digest persisted", {
+    digestId,
+    emptyDigest,
+    itemCount: digestCandidate.items.length,
+    reusedExistingDigest,
+  });
 
   // 6. 入队投递任务
   return createCompletedStepResult({

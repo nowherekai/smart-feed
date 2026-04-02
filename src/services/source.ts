@@ -7,7 +7,7 @@ import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { XMLParser } from "fast-xml-parser";
 
 import { getDb, sources } from "../db";
-import { normalizeUrl } from "../utils";
+import { logger, normalizeUrl } from "../utils";
 
 /** 快速 XML 解析器配置，用于提取 Feed 元数据 */
 const feedParser = new XMLParser({
@@ -173,32 +173,52 @@ export async function verifyAndPrepareRssSource(
 ): Promise<PreparedRssSource> {
   const normalizedUrl = assertHttpUrl(inputUrl);
   const fetchImpl = deps.fetch ?? fetch;
-  const response = await fetchImpl(normalizedUrl, {
-    headers: {
-      "user-agent": SMART_FEED_USER_AGENT,
-      accept: "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
-    },
-    redirect: "follow",
-    signal: AbortSignal.timeout(10_000), // 10秒超时
-  });
 
-  if (!response.ok) {
-    throw new Error(`[services/source] Source URL returned ${response.status}.`);
+  logger.info("Verifying RSS source", { url: normalizedUrl });
+
+  try {
+    const response = await fetchImpl(normalizedUrl, {
+      headers: {
+        "user-agent": SMART_FEED_USER_AGENT,
+        accept: "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(10_000), // 10秒超时
+    });
+
+    if (!response.ok) {
+      const errorMsg = `[services/source] Source URL returned ${response.status}.`;
+      logger.error(errorMsg, { url: normalizedUrl, status: response.status });
+      throw new Error(errorMsg);
+    }
+
+    const body = await response.text();
+
+    if (!body.trim()) {
+      const errorMsg = "[services/source] Source URL returned an empty response.";
+      logger.warn(errorMsg, { url: normalizedUrl });
+      throw new Error(errorMsg);
+    }
+
+    const metadata = extractFeedMetadata(body);
+
+    logger.info("RSS source verified successfully", {
+      url: normalizedUrl,
+      hasSiteUrl: Boolean(metadata.siteUrl),
+      hasTitle: Boolean(metadata.title),
+      titleLength: metadata.title?.length ?? 0,
+    });
+
+    return {
+      normalizedUrl,
+      title: metadata.title,
+      siteUrl: metadata.siteUrl,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown verification error";
+    logger.error("RSS source verification failed", { url: normalizedUrl, error: errorMessage });
+    throw error;
   }
-
-  const body = await response.text();
-
-  if (!body.trim()) {
-    throw new Error("[services/source] Source URL returned an empty response.");
-  }
-
-  const metadata = extractFeedMetadata(body);
-
-  return {
-    normalizedUrl,
-    title: metadata.title,
-    siteUrl: metadata.siteUrl,
-  };
 }
 
 /**
@@ -213,6 +233,10 @@ export async function findSourceByIdentifier(
     .select()
     .from(sources)
     .where(and(eq(sources.type, type), eq(sources.identifier, identifier)));
+
+  if (source) {
+    logger.debug("Source found by identifier", { identifier, sourceId: source.id });
+  }
 
   return source ?? null;
 }
@@ -232,7 +256,15 @@ export async function createSource(data: NewSource): Promise<SourceRecord> {
   const db = getDb();
   const [source] = await db.insert(sources).values(data).returning();
 
-  return requireInsertedSource(source);
+  const result = requireInsertedSource(source);
+
+  logger.info("New source created", {
+    sourceId: result.id,
+    identifier: result.identifier,
+    title: result.title,
+  });
+
+  return result;
 }
 
 /**

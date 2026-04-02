@@ -21,3 +21,15 @@ test("fetchPageHtml requests HTML and wraps plain text responses", async () => {
   expect(new Headers(calls[0]?.headers).get("accept")).toContain("text/html");
   expect(html).toContain("<html><body><pre>plain text</pre></body></html>");
 });
+
+test("fetchPageHtml keeps error messages free of the full URL", async () => {
+  await expect(
+    fetchPageHtml("https://example.com/post?token=secret", {
+      async fetchImpl() {
+        return new Response("blocked", {
+          status: 403,
+        });
+      },
+    }),
+  ).rejects.toThrow("[services/html-fetcher] Page fetch returned 403.");
+});

@@ -9,6 +9,7 @@
 
 import type { ContentPipelineJobData, PipelineStepExecutionResult, PipelineStepResult } from "../pipeline/types";
 import { getQueueForTask, type SmartFeedTaskName } from "../queue";
+import { logger } from "../utils";
 import {
   createPipelineRun,
   createStepRun,
@@ -122,11 +123,17 @@ export async function executeContentPipelineStep<
     });
 
     pipelineRunId = pipelineRun.id;
+    logger.info("Pipeline run started", {
+      pipelineRunId,
+      contentId: jobData.contentId,
+      pipelineName: CONTENT_PIPELINE_NAME,
+    });
   } else {
     // 否则更新已有记录状态为运行中
     await deps.updatePipelineRun(pipelineRunId, {
       status: "running",
     });
+    logger.debug("Pipeline run continued", { pipelineRunId, stepName: jobName });
   }
 
   // 2. 记录当前步骤的开始
@@ -136,6 +143,12 @@ export async function executeContentPipelineStep<
     startedAt,
     status: "running",
     stepName: jobName,
+  });
+
+  logger.info(`Step execution started: ${jobName}`, {
+    pipelineRunId,
+    stepRunId: stepRun.id,
+    jobName,
   });
 
   try {
@@ -157,6 +170,12 @@ export async function executeContentPipelineStep<
     // 4. 处理业务层标记的失败
     if (result.status === "failed") {
       const finishedAt = deps.now();
+
+      logger.warn(`Step execution failed business logic: ${jobName}`, {
+        pipelineRunId,
+        stepRunId: stepRun.id,
+        message: result.message,
+      });
 
       await deps.updateStepRun(stepRun.id, {
         errorMessage: result.message ?? "Unknown step failure.",
@@ -185,6 +204,11 @@ export async function executeContentPipelineStep<
 
     if (result.nextStep) {
       // 注入 pipelineRunId 实现跨 Job 追踪
+      logger.info(`Enqueueing next step: ${result.nextStep.jobName}`, {
+        pipelineRunId,
+        nextStep: result.nextStep.jobName,
+      });
+
       await deps.enqueueJob(result.nextStep.jobName, withPipelineRunId(result.nextStep.data, pipelineRunId));
       nextStepQueued = true;
     }
@@ -199,8 +223,16 @@ export async function executeContentPipelineStep<
       status: "completed",
     });
 
+    logger.info(`Step execution completed: ${jobName}`, {
+      pipelineRunId,
+      stepRunId: stepRun.id,
+      outcome: result.outcome,
+      nextStepQueued,
+    });
+
     // 7. 若没有下一步了，整个流水线标记为完成
     if (!result.nextStep) {
+      logger.info("Pipeline run completed", { pipelineRunId });
       await deps.updatePipelineRun(pipelineRunId, {
         finishedAt,
         status: "completed",
@@ -220,6 +252,12 @@ export async function executeContentPipelineStep<
     // 8. 处理未捕获的运行时异常
     const finishedAt = deps.now();
     const errorMessage = toErrorMessage(error);
+
+    logger.error(`Step execution crashed: ${jobName}`, {
+      pipelineRunId,
+      stepRunId: stepRun.id,
+      error: errorMessage,
+    });
 
     await deps.updateStepRun(stepRun.id, {
       errorMessage,

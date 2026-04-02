@@ -451,9 +451,16 @@ export async function runSourceFetch(
 ): Promise<SourceFetchSummary> {
   const deps = buildSourceFetchDeps(overrides);
   const fetchedAt = deps.now();
+
+  logger.info("runSourceFetch started", {
+    sourceId: jobData.sourceId,
+    trigger: jobData.trigger,
+  });
+
   const source = await deps.getSourceById(jobData.sourceId);
 
   if (!source) {
+    logger.error(`[services/content] Source "${jobData.sourceId}" not found.`, { sourceId: jobData.sourceId });
     throw new Error(`[services/content] Source "${jobData.sourceId}" not found.`);
   }
 
@@ -480,14 +487,23 @@ export async function runSourceFetch(
   });
 
   try {
+    const headers = buildRequestHeaders(source);
+    logger.info("Fetching source feed", {
+      sourceId: source.id,
+      url: source.identifier,
+      etag: source.syncCursor?.etag,
+      lastModified: source.syncCursor?.lastModified,
+    });
+
     const response = await deps.fetchImpl(source.identifier, {
-      headers: buildRequestHeaders(source),
+      headers,
       redirect: "follow",
       signal: AbortSignal.timeout(10_000),
     });
 
     // 处理 304 缓存逻辑
     if (response.status === 304) {
+      logger.info("Source feed not modified (304)", { sourceId: source.id });
       await deps.updateSource(source.id, {
         lastErrorAt: null,
         lastErrorMessage: null,
@@ -520,6 +536,12 @@ export async function runSourceFetch(
       fetchedAt,
       feedUrl: source.identifier,
       xml,
+    });
+
+    logger.info("Source feed parsed", {
+      sourceId: source.id,
+      itemCount: parsedFeed.items.length,
+      feedTitle: parsedFeed.title,
     });
 
     let createdCount = 0;
@@ -572,6 +594,11 @@ export async function runSourceFetch(
 
       if (!inTimeWindow) {
         sentinelCount += 1;
+        logger.debug("Content item skipped (out of time window)", {
+          contentId: contentItem.id,
+          effectiveAt: effectiveAt.toISOString(),
+          title: item.title,
+        });
       }
 
       // 4. 存储原始内容负载
@@ -587,6 +614,12 @@ export async function runSourceFetch(
 
       // 5. 若在窗口内，入队下一步处理器
       if (inTimeWindow) {
+        logger.info("New content item discovered and queued", {
+          contentId: contentItem.id,
+          title: item.title,
+          url: item.originalUrl,
+        });
+
         await deps.enqueueContentFetchHtml({
           contentId: contentItem.id,
           trigger: "source.fetch",
@@ -603,6 +636,15 @@ export async function runSourceFetch(
       siteUrl: parsedFeed.siteUrl ?? source.siteUrl,
       syncCursor: buildNextSyncCursor(source, parsedFeed.items, response.headers),
       title: parsedFeed.title ?? source.title,
+    });
+
+    logger.info("runSourceFetch completed", {
+      createdCount,
+      duplicateCount,
+      fetchedCount,
+      queuedCount,
+      sentinelCount,
+      sourceId: source.id,
     });
 
     return {
@@ -641,12 +683,20 @@ export async function runContentFetchHtml(
   jobData: ContentFetchHtmlJobData,
   overrides: ContentFetchHtmlDeps = {},
 ): Promise<PipelineStepResult<ContentFetchHtmlPayload, ContentNormalizeJobData>> {
+  logger.info("runContentFetchHtml started", {
+    contentId: jobData.contentId,
+    pipelineRunId: jobData.pipelineRunId,
+    trigger: jobData.trigger,
+  });
+
   const deps = buildContentFetchHtmlDeps(overrides);
   const record = await deps.getContentWithRawById(jobData.contentId);
 
   if (!record) {
+    const message = `[services/content] Content "${jobData.contentId}" not found.`;
+    logger.error(message, { contentId: jobData.contentId });
     return createFailedStepResult({
-      message: `[services/content] Content "${jobData.contentId}" not found.`,
+      message,
       payload: {
         contentId: jobData.contentId,
         fetched: false,
@@ -657,6 +707,7 @@ export async function runContentFetchHtml(
 
   if (!record.raw) {
     const message = `[services/content] Raw content for "${jobData.contentId}" not found.`;
+    logger.error(message, { contentId: record.content.id });
 
     await deps.updateContentItem(record.content.id, {
       processingError: message,
@@ -678,6 +729,11 @@ export async function runContentFetchHtml(
 
   try {
     // 尝试抓取全文
+    logger.info("Fetching full HTML content", {
+      contentId: record.content.id,
+      url: record.content.originalUrl,
+    });
+
     const fetchedHtml = await deps.fetchHtml(record.content.originalUrl);
 
     // 更新内容，将原有内容作为摘要备选
@@ -692,12 +748,23 @@ export async function runContentFetchHtml(
       processingError: null,
       status: "raw",
     });
+
+    logger.info("HTML content fetched successfully", {
+      contentId: record.content.id,
+      htmlSize: fetchedHtml.length,
+    });
   } catch (error) {
     const errorMessage = toFailureMessage(error);
     const fallbackAvailable = Boolean(record.raw.rawBody.trim() || record.raw.rawExcerpt?.trim());
 
     // 抓取失败且没有 RSS 原始内容，则流水线失败
     if (!fallbackAvailable) {
+      logger.error("Content HTML fetch failed and no fallback available", {
+        contentId: record.content.id,
+        error: errorMessage,
+        url: record.content.originalUrl,
+      });
+
       await deps.updateContentItem(record.content.id, {
         processingError: errorMessage,
         status: "failed",
@@ -719,7 +786,7 @@ export async function runContentFetchHtml(
       processingError: errorMessage,
       status: "raw",
     });
-    logger.warn("content html fetch failed, fallback to existing raw body", {
+    logger.warn("Content HTML fetch failed, fallback to existing raw body", {
       contentId: record.content.id,
       error: errorMessage,
       originalUrl: record.content.originalUrl,
@@ -764,8 +831,10 @@ export async function runContentNormalize(
   const record = await deps.getContentWithRawById(jobData.contentId);
 
   if (!record) {
+    const message = `[services/content] Content "${jobData.contentId}" not found.`;
+    logger.error(message, { contentId: jobData.contentId });
     return createFailedStepResult({
-      message: `[services/content] Content "${jobData.contentId}" not found.`,
+      message,
       payload: {
         contentId: jobData.contentId,
         markdownBytes: 0,
@@ -776,6 +845,7 @@ export async function runContentNormalize(
 
   if (!record.raw) {
     const message = `[services/content] Raw content for "${jobData.contentId}" not found.`;
+    logger.error(message, { contentId: record.content.id });
 
     await deps.updateContentItem(record.content.id, {
       processingError: message,
@@ -794,6 +864,11 @@ export async function runContentNormalize(
 
   try {
     // 调用转换工具：HTML -> Markdown (包含清洗噪音逻辑)
+    logger.info("Normalizing content to Markdown", {
+      contentId: record.content.id,
+      format: record.raw.format,
+    });
+
     const normalized = deps.normalizeContent({
       format: record.raw.format,
       originalUrl: record.content.originalUrl,
@@ -806,6 +881,12 @@ export async function runContentNormalize(
       cleanedMd: normalized.markdown,
       processingError: null,
       status: "normalized",
+    });
+
+    logger.info("Content normalized successfully", {
+      contentId: record.content.id,
+      markdownBytes,
+      truncated: normalized.truncated,
     });
 
     return createCompletedStepResult({
@@ -824,6 +905,10 @@ export async function runContentNormalize(
     });
   } catch (error) {
     const errorMessage = toFailureMessage(error);
+    logger.error("Content normalization failed", {
+      contentId: record.content.id,
+      error: errorMessage,
+    });
 
     await deps.updateContentItem(record.content.id, {
       processingError: errorMessage,

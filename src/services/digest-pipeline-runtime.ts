@@ -6,6 +6,7 @@
 
 import type { PipelineStepExecutionResult, PipelineStepResult } from "../pipeline/types";
 import { getQueueForTask, type SmartFeedTaskName } from "../queue";
+import { logger } from "../utils";
 import {
   createPipelineRun,
   createStepRun,
@@ -127,10 +128,15 @@ export async function executeDigestPipelineStep<
     });
 
     pipelineRunId = pipelineRun.id;
+    logger.info("Digest pipeline run started", {
+      pipelineRunId,
+      pipelineName: DIGEST_PIPELINE_NAME,
+    });
   } else {
     await deps.updatePipelineRun(pipelineRunId, {
       status: "running",
     });
+    logger.debug("Digest pipeline run continued", { pipelineRunId, stepName: jobName });
   }
 
   // 2. 记录步骤开始
@@ -142,11 +148,21 @@ export async function executeDigestPipelineStep<
     stepName: jobName,
   });
 
+  logger.info(`Digest step execution started: ${jobName}`, {
+    pipelineRunId,
+    stepRunId: stepRun.id,
+    jobName,
+  });
+
   try {
     // 3. 执行业务步骤
     const result = await runStep(jobData);
     // 摘要流程中，通常在 compose 之后才有 digestId，解析它并关联到流水线
     const digestId = options.resolveDigestId?.({ ...result, jobData }) ?? null;
+
+    if (digestId) {
+      logger.info("Associated digestId to pipeline run", { pipelineRunId, digestId });
+    }
 
     const outputRef = serialize({
       message: result.message ?? null,
@@ -164,6 +180,12 @@ export async function executeDigestPipelineStep<
     // 4. 处理失败
     if (result.status === "failed") {
       const finishedAt = deps.now();
+
+      logger.warn(`Digest step execution failed business logic: ${jobName}`, {
+        pipelineRunId,
+        stepRunId: stepRun.id,
+        message: result.message,
+      });
 
       await deps.updateStepRun(stepRun.id, {
         errorMessage: result.message ?? "Unknown step failure.",
@@ -194,6 +216,10 @@ export async function executeDigestPipelineStep<
     let nextStepQueued = false;
 
     if (result.nextStep) {
+      logger.info(`Enqueueing next digest step: ${result.nextStep.jobName}`, {
+        pipelineRunId,
+        nextStep: result.nextStep.jobName,
+      });
       await deps.enqueueJob(result.nextStep.jobName, withPipelineRunId(result.nextStep.data, pipelineRunId));
       nextStepQueued = true;
     }
@@ -208,6 +234,13 @@ export async function executeDigestPipelineStep<
       status: "completed",
     });
 
+    logger.info(`Digest step execution completed: ${jobName}`, {
+      pipelineRunId,
+      stepRunId: stepRun.id,
+      outcome: result.outcome,
+      nextStepQueued,
+    });
+
     // 7. 更新流水线运行记录，确保关联了 digestId
     if (result.nextStep) {
       await deps.updatePipelineRun(
@@ -217,6 +250,7 @@ export async function executeDigestPipelineStep<
         }),
       );
     } else {
+      logger.info("Digest pipeline run completed", { pipelineRunId });
       await deps.updatePipelineRun(
         pipelineRunId,
         buildPipelineUpdate(digestId, {
@@ -239,6 +273,12 @@ export async function executeDigestPipelineStep<
     // 8. 异常捕获与记录
     const finishedAt = deps.now();
     const errorMessage = error instanceof Error && error.message ? error.message : "Unknown pipeline runtime error.";
+
+    logger.error(`Digest step execution crashed: ${jobName}`, {
+      pipelineRunId,
+      stepRunId: stepRun.id,
+      error: errorMessage,
+    });
 
     await deps.updateStepRun(stepRun.id, {
       errorMessage,
