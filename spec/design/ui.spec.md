@@ -2,202 +2,331 @@
 
 <meta>
   <document-id>smart-feed-ui-spec</document-id>
-  <version>1.0.0</version>
+  <version>1.1.0</version>
   <project>smart-feed</project>
-  <type>UI 设计规格</type>
+  <type>UI 现状规格</type>
   <created>2026-03-31</created>
-  <tech-stack>Next.js 16, React 19, Tailwind CSS v4, shadcn/ui, Zustand v4</tech-stack>
+  <updated>2026-04-02</updated>
+  <tech-stack>Next.js 16, React 19, Tailwind CSS v4, shadcn/ui, Base UI</tech-stack>
 </meta>
 
-## 1. 智能分析结论
+## 1. 文档定位
 
-### 1.1 应用类型
-**结论**: 基于 SPA (单页应用) 体验的智能面板 (Dashboard)
-**理由**: smart-feed 作为一个个人情报处理系统，需要提供流畅的信息流阅读体验（Digest 阅读）以及便捷的来源管理。用户在阅读日报、过滤信息和调整权重/反馈时属于连贯的探索和控制交互，SPA 模式能够减少页面切换的重绘，提供接近原生应用的流畅体验。
+本文件描述当前代码已经实现的 UI 结构与交互约束，**以仓库现有代码为准**，不再保留已经过期的设计设想。
 
-### 1.2 导航结构
-**类型**: 侧边栏结构 (Side Nav)
-**主导航**: 
-- **今日日报 (Daily Digest)**: 默认首页，按主题流式展现今日 AI 摘要与原文回链。
-- **信息源管理 (Sources)**: 来源列表、添加源、OPML 导入与系统来源状态维护。
-- **历史归档 (Archive)**: 查看历史日期的 Digest 报告。
-- **系统设置与调度设置 (Settings)**: 查看系统抓取/生成状态，调整偏好配置（如时间窗口、时区等）。
-
-### 1.3 配色方案
-**主色相**: 220° (Slate Blue / 沉稳蓝) 
-**OKLCH 配置**:
-```css
-@theme inline {
-  --color-primary: oklch(0.55 0.15 240);
-  --color-primary-foreground: oklch(0.98 0 0);
-  --color-muted: oklch(0.92 0.02 240);
-  --color-border: oklch(0.85 0.02 240);
-}
-```
-**理由**: 偏冷色调的蓝色传达出人工智能、专业化处理和可信赖的质感，适合帮助知识工作者冷静思考，减少高频信息流带来的焦虑与过载。
+当前规格覆盖的核心页面：
+- `/` Dashboard
+- `/digest` Daily Digest
+- `/original-content` Original Feeds
+- `/sources` Sources
+- `/settings` Settings
 
 ---
 
-## 2. 设计系统
+## 2. 产品形态
 
-### 2.1 设计令牌 (Tailwind CSS v4)
-基于 Tailwind v4 inline theme 机制设定标准间距和圆角体系：
-```css
-@theme inline {
-  --spacing-1: 0.25rem;
-  --spacing-2: 0.5rem;
-  --spacing-4: 1rem;
-  --spacing-6: 1.5rem;
-  --spacing-8: 2rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
-}
-```
+### 2.1 应用类型
+- 桌面优先的单栏工作台。
+- 使用 App Router 的服务端渲染页面，辅以局部 Client Component 处理交互。
+- 重点是内容浏览、来源管理与轻量配置，不包含登录、用户体系或多租户界面。
 
-### 2.2 字体配置
-```css
---font-sans: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-```
-**重要约束**: 不使用 Google Fonts！仅使用系统自带无衬线字体栈，确保应用在国内加载畅通无阻且无额外的隐私审查负担。
+### 2.2 当前导航结构
+- `Dashboard`
+- `Daily Digest`
+- `Original Feeds`
+- `Sources`
+- `Settings`
 
----
+说明：
+- `Dashboard` 是当前默认首页。
+- 当前代码中**没有** `Archive` 页面，也没有历史日报导航入口。
+- `Original Feeds` 是原始抓取内容时间流页面，名称已固定，不再使用 `Original Content`。
 
-## 3. 页面布局
-
-**响应式断点:**
-| Name | Width | Layout |
-|------|-------|--------|
-| Mobile | <640px | 单列结构，顶部标题栏 + 侧边滑动抽屉 (Sheet) 提供导航。重点适配单手滑动阅读 Digest。 |
-| Tablet | 640-1024px | 窄边折叠侧边栏 (Collapsed Sidebar) + 主内容区。 |
-| Desktop | >1024px | 固定左侧边栏 (Full Sidebar, 240px) + 中心阅读区（最宽限制于 800px 居中以确保行长适合阅读）。 |
+### 2.3 页面标题映射
+- `/` → `Dashboard`
+- `/digest` → `Daily Digest`
+- `/original-content` → `Original Feeds`
+- `/sources` → `Sources`
+- `/settings` → `Settings`
 
 ---
 
-## 4. 组件规格
+## 3. 布局规格
 
-采用 `shadcn/ui` 库作为核心体系并做针对性扩展：
-- **Base**: `Button`, `Badge` (标记 source 状态或 AI 归类的标签), `Card` (单独封装 Digest 条目卡片), `Avatar` (展示源站点 favicon)。
-- **Form**: `Input`, `Textarea`, `Form` (结合 React Hook Form + Zod v4), `Switch` (源配置的启停开关)。
-- **Layout**: `Dialog` (用于 OPML 文件系统导入和新增源入口), `ScrollArea`, `Separator`。
-- **Navigation**: `Tabs` (今日/分类 切换视图), `Tooltip` (对简写的操作图标提供说明)。
-- **Feedback**: `Skeleton` (新闻流和 AI 加载过程中的结构骨架), `Sonner` (用于全局非阻塞提示：抓取触发成功、通知发送等)。
-- **定制化排版 UI**: 在 Digest 卡片内对 `evidence_snippet` 提供定制化的 Quote 块级样式标记。
+### 3.1 全局壳层
+- 左侧固定 Sidebar，宽度 `w-64`。
+- 右侧为 Header + 主内容区。
+- 主内容区内部统一使用 `ScrollArea` 滚动，而不是整页浏览器滚动。
+- Header 固定在顶部，带毛玻璃背景。
 
----
+### 3.2 Sidebar
+- 顶部包含产品标识 `smart-feed` 与图标。
+- 中部为主导航列表。
+- 底部当前为空占位，不显示 `Demo Mode`、`Mock Mode` 或额外挂件。
 
-## 5. 状态管理
+### 3.3 Header
+- 左侧显示当前路由标题。
+- 右侧固定提供 `New Source` 按钮，跳转到 `/sources`。
 
-采用 `Zustand` 搭配 `persist` 中间件，支持本地优先 Mock 机制，为 UI 组件层和 API 联调构建缓冲：
-
-```typescript
-import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
-import { MOCK_SOURCES } from '@/data/mock'
-
-interface AppState {
-  useMockMode: boolean
-  setMockMode: (mock: boolean) => void
-  sources: any[]
-  addSource: (url: string) => void
-  toggleSourceStatus: (id: string) => void
-}
-
-export const useAppStore = create<AppState>()(
-  persist(
-    (set) => ({
-      useMockMode: true,  // 默认开启，确保持续可用
-      sources: MOCK_SOURCES, // 提供初始富数据
-      setMockMode: (mock) => set({ useMockMode: mock }),
-      addSource: (url) => set((s) => ({
-        sources: [...s.sources, { id: crypto.randomUUID(), identifier: url, status: 'active', weight: 1 }]
-      })),
-      toggleSourceStatus: (id) => set((s) => ({
-        sources: s.sources.map(source => source.id === id ? 
-          { ...source, status: source.status === 'active' ? 'paused' : 'active' } : source)
-      }))
-    }),
-    { name: 'smart-feed-storage', storage: createJSONStorage(() => localStorage) }
-  )
-)
-```
+### 3.4 内容区宽度
+- `Dashboard` / `Sources` / `Settings`：主内容容器约 `max-w-5xl`
+- `Daily Digest`：主内容容器约 `max-w-4xl`
+- `Original Feeds`：主内容容器约 `max-w-6xl`
 
 ---
 
-## 6. 功能独立原则
+## 4. 文案与信息密度约束
 
-为了在全链路 API 建设完成前依然保持界面高可用，严格遵循以下特性独立策略：
+### 4.1 文案规则
+- 页面与组件默认只保留必要标题、状态、操作和数据内容。
+- **不要默认添加解释性副标题、功能概述或实现说明文案。**
+- 例如不要写：
+  - “Chronological feed of all synced articles.”
+  - “支持按状态筛选、按来源下钻、按时间查看”
+  - “该页面展示 AI 处理前的原始内容”
 
-1. **无阻塞依赖设定**: 本系统为单用户情报工具，无注册登录机制阻塞。若尚未配置真实数据库连接，默认启用 Zustand 中 `useMockMode=true`，保证在没有后台服务的情况下也可进行交互评测和样式微调。
-2. **Mock by Default, Real When Ready**: 在 `features` 包装逻辑组件中：
-   ```tsx
-   if (useMockMode) return <MockDigestFeed />;
-   return <RealDigestFeed />;
-   ```
-3. **视觉指示器警告**: 在左侧导航底部必须始终存在一个 `🎭 Demo Mode` 的提醒挂件 (仅在 Mock=true 时显示)，引导用户前往部署联调真实环境。
+### 4.2 允许保留的文案类型
+- 页面标题
+- 按钮文字
+- 表单 placeholder
+- 空状态的最小必要提示
+- Toast 成功/失败反馈
+- 卡片中的真实业务内容
 
----
-
-## 7. Mock 数据
-
-必须在应用初始化阶段附带 `@/data/mock.ts` 中至少包含的数据（Rich Mock Data）：
-
-**7.1 MOCK_SOURCES (8-10 个记录)**
-- 类型：技术、经济、管理、独立博客。
-- 状态组合包含 `status: 'active'`, `status: 'paused'`, `status: 'blocked'`。
-
-**7.2 MOCK_DIGEST (2份完整的编排报告)**
-- 日期：包含 `daily:2026-03-30` 和 `daily:2026-03-31`。
-- 层级结构：具备 Category (如 "技术前沿") > Articles。
-- 卡片包含：`oneline` 短语，3 句 `points`，以及最核心的要求：必须存在真实的 `evidence_snippet` 和可点击的 `original_url`。
+### 4.3 视觉风格
+- 偏克制、偏内容阅读，不做营销式说明。
+- 避免用一大段文案解释界面应该怎么用。
+- 信息层级通过布局、留白、字号与卡片结构表达，而不是通过功能说明段落表达。
 
 ---
 
-## 8. 核心功能实现 (P0 UI)
+## 5. 页面规格
 
-### 8.1 来源管理模块 (`/sources`)
-- **列表视图**: 表格级展示。列：源 Logo、规范化 URL(`source_trace_id`)、源状态（Switch 控件：活跃/暂停）。
-- **增加/导入操作**: Header 设统一触发点 "Add RSS"。提供 Tabs: [单个引入] / [OPML 文件拖拽引入]。
-- **空状态**: 无数据时渲染巨幅虚线框加上 Lucide 图标的引导层 "Drop your OPML file here..."。
+### 5.1 Dashboard (`/`)
 
-### 8.2 今日日报区 (`/digest`)
-- **主题分组排版 (Grouped Feed)**: 依照 AI 分类标签 (`category`) 渲染 Section Title (如：`## 宏观经济`)。
-- **可追溯性卡片 (Traceable Card Design)**:
-  - **头部**: 原文标题 (不可点击) + `Avatar` 来源显示 + 右上角放置外链跳转按钮 (`original_url`)。
-  - **躯干**: 第一句为 `oneline` 强调；随后 `List` 排版展示 `points`；再给出一句话 `reason` 的强调底色。
-  - **底部追溯**: 块引用 (Blockquote) 样式专属渲染 `evidence_snippet`。这是确立用户信任度的绝对关键点！
-  - **交互占位**: 在每张卡片右下方布局出轻拟物的 "👍 有用的 / 👎 没用的 / 🚫 减少此源推送" 的反馈入口组（前期可仅展示或挂接 Mock 气泡反馈）。
+用途：
+- 展示 `Top Intelligence`，即已经完成 AI 摘要的高价值内容卡片。
+
+结构：
+- 顶部标题 `Top Intelligence`
+- 右侧轻量状态提示 `Real-time update`
+- 下方为 1 列 / 2 列响应式卡片网格
+
+数据来源：
+- `getTopIntelligence()`
+
+空状态：
+- `No intelligence ready yet. Check back later or add more sources.`
+
+卡片内容：
+- 分类 Badge
+- 价值分
+- 一句话摘要
+- 来源名称
+- 要点首句
+- 证据 tooltip
+
+### 5.2 Daily Digest (`/digest`)
+
+用途：
+- 以主题分组形式展示已完成摘要的日报内容。
+
+结构：
+- 居中标题 `Daily Intelligence Digest`
+- 标题下方显示业务时区日期
+- 按分类分组渲染 section
+
+数据来源：
+- `getDailyDigestItems()`
+
+分组逻辑：
+- 基于 `record.categories`
+- 仅展示可转换为 digest record 的内容
+
+空状态：
+- `No digest generated yet. Wait for the scheduled task or trigger manually.`
+
+### 5.3 Original Feeds (`/original-content`)
+
+用途：
+- 展示所有 source 的原始抓取内容时间流。
+- 数据直接来自原始内容表，不依赖 AI 摘要记录。
+
+页面标题：
+- `Original Feeds`
+
+顶部筛选区：
+- 时间筛选下拉
+- 来源筛选下拉
+
+时间筛选：
+- `All Time`
+- `Today`
+- `Last 2 Days`
+- `Last Week`
+
+来源筛选：
+- 单选
+- 支持前端搜索
+- 支持 `All Sources`
+- 支持清除当前来源筛选
+
+列表规则：
+- 按 `effectiveAt desc, createdAt desc` 排序
+- 当前默认每页 `100` 条
+- 分页控件位于**列表底部**
+
+卡片内容：
+- 来源 badge
+- 作者（无则不显示）
+- 标题
+- `effectiveAt` 的业务时区格式化时间
+- 原始内容预览文本
+- `Read Original` 外链按钮
+
+预览规则：
+- 优先 `rawExcerpt`
+- 否则回退 `rawBody`
+- HTML 先去标签并规整空白
+- 截断长度 `280`
+- 不直接渲染原始 HTML
+
+空状态：
+- `No original content found for the current filters.`
+
+### 5.4 Sources (`/sources`)
+
+用途：
+- 管理 RSS 来源，支持单条添加与 OPML 导入。
+
+顶部卡片：
+- 标题 `Manage Sources`
+- 说明文案 `添加单个 RSS，或通过 OPML 批量导入现有订阅清单。`
+
+操作入口：
+- Tabs:
+  - `单条 RSS`
+  - `OPML 导入`
+
+单条 RSS：
+- URL 输入框
+- `Add Source` 按钮
+
+OPML 导入：
+- 文件选择 / 拖拽区域
+- `选择文件` / `更换文件`
+- `清空`
+- `开始导入`
+
+导入完成后：
+- 展示本次导入结果摘要
+- 展示失败明细（若有）
+
+来源卡片列表：
+- status badge
+- 删除按钮
+- 标题与 identifier
+- `Pause Sync` / `Resume Sync`
+
+空状态：
+- `No sources configured. Try adding an RSS feed above!`
+
+### 5.5 Settings (`/settings`)
+
+当前状态：
+- 仅有基础占位卡片，不是完整设置中心。
+
+已有内容：
+- `General Settings`
+- `Digest Time`
+- 右侧静态 badge `08:00 AM`
+
+说明：
+- 当前页面仍包含说明性 `CardDescription`，这是已有实现现状，不代表新页面应继续沿用同样策略。
 
 ---
 
-## 9. 交互模式
+## 6. 组件与交互模式
 
-- **骨架屏呈现模型 (Skeleton Loading)**: 数据拉取期间，Digest Feed 直接生成 3 篇卡片宽度的渐变闪动占位框，而不是全局 Loading Spinner。
-- **空状态呈现 (Empty States)**: 用户新注册无 Feed 阶段或今日还没 Digest 生成时，需要配文说明："仍在为您从 10 个信息源中过滤信息，去泡杯咖啡吧~" 甚至可以提供 `强行生成 Digest` 的占位按钮。
-- **用户反馈模式**: 当发生来源停用或点击"没用"进行 Feedback 时，应使用 `Sonner` 发送 "已记录偏好，下一轮报告将生效" 以构建良好的行为闭环。不需要阻塞 UI，允许乐观更新。
+### 6.1 当前已使用的核心 UI 组件
+- `Button`
+- `Badge`
+- `Card`
+- `Input`
+- `Tabs`
+- `AlertDialog`
+- `ScrollArea`
+- `Separator`
+- `Skeleton`
+- `Tooltip`
+- `Sonner`
+
+### 6.2 筛选交互
+- `Original Feeds` 的筛选器是页面内局部实现，不是通用 combobox 基础设施。
+- 通过 `router.replace()` 同步 URL query。
+- 改变时间筛选或来源筛选时，分页重置为第一页。
+
+### 6.3 Skeleton 使用方式
+- `Dashboard`、`Digest`、`Sources` 均提供 skeleton fallback。
+- `Original Feeds` 当前没有单独的 skeleton 视图。
+
+### 6.4 Toast 与乐观反馈
+- `Sources` 页面在添加、导入、删除、切换状态时使用 toast 反馈。
+- 导入与状态切换包含局部乐观更新或刷新逻辑。
 
 ---
 
-## 10. 无障碍性 (Accessibility)
+## 7. 状态管理现状
 
-- [ ] 表单提交入口与 Feed 内重要按钮都支持 `tabIndex` 焦点访问机制。
-- [ ] UI Badge 的背景与字色必须对比度测试达标 ( WCAG AA，>4.5:1 )，特别是不可读色的浅灰被淘汰，深蓝、墨等为主导。
-- [ ] 仅靠颜色辨别的内容必须增加对应文案的 `aria-label` 与 Tooltip，对于"活跃"/"暂停" 按钮，必须提供 "Active" 文本字样辅助，而不只有绿灯黄灯展示。
+### 7.1 当前实际实现
+- 当前页面数据主要通过 Server Component + Server Action 直接读取。
+- 客户端局部状态仅用于：
+  - 表单输入
+  - 弹层开关
+  - 文件选择
+  - 来源搜索
+  - 乐观 UI
+
+### 7.2 当前未使用的方案
+- 当前代码中**没有**按 UI 主状态管理去落地 `Zustand persist + Mock Store`。
+- 当前代码中**没有** `Demo Mode` 指示器。
+
+因此：
+- 旧版“默认 Mock 模式”相关设计不再视为当前 UI 规格的一部分。
 
 ---
 
-## 11. 扩展点 (Extension Points)
+## 8. 响应式与可用性
 
-- **Database API 迁移**: Zustand 状态中包含的动作 `addSource`, `toggleStatus` 后期通过 SWR 或 React Server Actions 极速对接到对应的 API (`/api/sources`) 路由而不重制大片逻辑。
-- **反馈 API 集成 (US-5.1 ~ US-5.4)**: `useful`, `useless` 行为现阶段只是操作 Zustand 中单条记录的状态并弹出 Toast；后期它对应的就是调用 `POST /api/feedback { target_type: 'content', signal: 'useful' }`，具备良好的前置铺垫。
+### 8.1 已有实现倾向
+- 当前实现明显偏桌面工作台。
+- Sidebar 为固定左栏。
+- 多数页面在移动端没有专门的导航抽屉实现。
+
+### 8.2 规格约束
+- 不在 spec 中虚构尚未实现的移动端交互。
+- 若未来新增移动端导航抽屉、折叠侧栏或底部导航，应在此文档追加，而不是提前写成现状。
 
 ---
 
-## 12. 验收检查清单
+## 9. 当前已知差异与边界
 
-- [ ] 项目中 Tailwind CSS v4 的 OKLCH 配色变量完整导入？
-- [ ] 本地不用配环境，运行直接能够借助 Mock Store 看见包含图文架构的源列表、含 "evidence snippet" 的日报界面？
-- [ ] 界面排版是否体现了重文字、轻装饰的严肃“阅读板”风格，UI 尽量克制不解释规则（如不写“支持按状态筛选”废话，直接显示操作层结构）？
-- [ ] 顶部或侧边固定状态下是否清晰提供了 "Demo Mode" 指示器便于后期区分真实链路？
-- [ ] 卡片中的摘要内容及引用证据之间具备明显的层级差别以明确展现【AI论点】 VS 【原文论据】？
+- `Settings` 仍然偏占位页。
+- `Dashboard`、`Sources`、`Settings` 仍保留少量说明性文案，这是历史实现现状。
+- 新增页面或后续改版默认应遵守“少解释、少副标题”的规则。
+- `Original Feeds` 名称已经替代 `Original Content`，后续文档与 UI 应保持一致。
+
+---
+
+## 10. 验收检查清单
+
+- [ ] Sidebar 是否包含 `Dashboard / Daily Digest / Original Feeds / Sources / Settings`
+- [ ] `/original-content` 页标题是否为 `Original Feeds`
+- [ ] `/original-content` 页面是否没有额外解释性副标题
+- [ ] `Original Feeds` 的时间筛选是否包含 `All Time / Today / Last 2 Days / Last Week`
+- [ ] `Original Feeds` 的来源筛选是否为“前端搜索 + 单选 + 可清除”
+- [ ] `Original Feeds` 是否按时间倒序展示，且分页位于列表底部
+- [ ] `Original Feeds` 是否默认每页 `100` 条
+- [ ] `Original Feeds` 卡片是否只展示必要信息，不渲染原始 HTML
+- [ ] Sources 页面是否仍支持单条 RSS 与 OPML 导入
+- [ ] 文案是否避免功能解释型副标题和实现说明
