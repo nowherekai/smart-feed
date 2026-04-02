@@ -42,3 +42,23 @@ test("verifyAndPrepareRssSource rejects non-feed responses", async () => {
     }),
   ).rejects.toThrow("not a valid RSS or Atom feed");
 });
+
+test("verifyAndPrepareRssSource accepts feeds with entity expansions above default limit", async () => {
+  const encodedPrefix = "&amp;".repeat(1_500);
+
+  const prepared = await verifyAndPrepareRssSource("https://example.com/feed.xml", {
+    fetch: async () =>
+      new Response(
+        `<?xml version="1.0" encoding="UTF-8"?>
+         <rss version="2.0">
+           <channel>
+             <title>${encodedPrefix}Example Feed</title>
+             <link>https://example.com?a=1&amp;b=2</link>
+           </channel>
+         </rss>`,
+      ),
+  });
+
+  expect(prepared.title).toBe(`${"&".repeat(1_500)}Example Feed`);
+  expect(prepared.siteUrl).toBe("https://example.com?a=1&b=2");
+});

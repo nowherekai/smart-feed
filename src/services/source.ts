@@ -14,6 +14,7 @@ const feedParser = new XMLParser({
   attributeNamePrefix: "",
   ignoreAttributes: false,
   parseTagValue: false,
+  processEntities: false,
   trimValues: true,
 });
 
@@ -60,6 +61,21 @@ function normalizeOptionalString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** 仅解码 XML 5 个内置实体，避免依赖通用实体展开。 */
+function decodeBasicXmlEntities(value: string): string {
+  return value
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&amp;", "&");
+}
+
+function normalizeOptionalXmlText(value: unknown): string | null {
+  const normalized = normalizeOptionalString(value);
+  return normalized ? decodeBasicXmlEntities(normalized) : null;
+}
+
 /**
  * 从原始 XML 中提取 Feed 元数据 (标题、站点链接)
  * 支持 RSS 2.0, Atom 1.0, 和 RDF/RSS 1.0
@@ -79,8 +95,8 @@ function extractFeedMetadata(xml: string): FeedMetadata {
 
   if (rssChannel) {
     return {
-      title: normalizeOptionalString(rssChannel.title),
-      siteUrl: normalizeOptionalString(rssChannel.link),
+      title: normalizeOptionalXmlText(rssChannel.title),
+      siteUrl: normalizeOptionalXmlText(rssChannel.link),
     };
   }
 
@@ -94,9 +110,9 @@ function extractFeedMetadata(xml: string): FeedMetadata {
     return {
       title:
         typeof atomFeed.title === "string"
-          ? normalizeOptionalString(atomFeed.title)
-          : normalizeOptionalString(atomFeed.title?.["#text"]),
-      siteUrl: normalizeOptionalString(alternateLink?.href),
+          ? normalizeOptionalXmlText(atomFeed.title)
+          : normalizeOptionalXmlText(atomFeed.title?.["#text"]),
+      siteUrl: normalizeOptionalXmlText(alternateLink?.href),
     };
   }
 
