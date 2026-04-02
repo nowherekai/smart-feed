@@ -1,5 +1,7 @@
 "use server";
 
+import { loadContentDetail } from "@/app/original-content/[contentId]/query";
+import type { ContentDetailData } from "@/app/original-content/[contentId]/types";
 import { loadOriginalContentFeed } from "@/app/original-content/query";
 import type {
   OriginalContentPageData,
@@ -27,4 +29,8 @@ export async function getOriginalContentSources(): Promise<OriginalContentSource
       };
     })
     .sort((left, right) => left.label.localeCompare(right.label, "en-US"));
+}
+
+export async function getContentDetail(contentId: string): Promise<ContentDetailData | null> {
+  return await loadContentDetail(contentId);
 }

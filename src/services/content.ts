@@ -55,9 +55,19 @@ export type ContentNormalizeJobData = {
   trigger: "content.fetch-html";
 };
 
+export type ContentAnalysisDebugMode = "new-record" | "overwrite";
+
+export type ContentAnalysisDebugOptions = {
+  continueToHeavy?: boolean;
+  recordMode: ContentAnalysisDebugMode;
+  rerunKey?: string | null;
+  variantTag?: string | null;
+};
+
 /** 基础分析 Job 数据 */
 export type ContentAnalyzeBasicJobData = {
   contentId: string;
+  debugOptions?: ContentAnalysisDebugOptions;
   pipelineRunId?: string;
   trigger: "content.normalize";
 };
@@ -65,6 +75,7 @@ export type ContentAnalyzeBasicJobData = {
 /** 深度摘要 Job 数据 */
 export type ContentAnalyzeHeavyJobData = {
   contentId: string;
+  debugOptions?: ContentAnalysisDebugOptions;
   pipelineRunId?: string;
   trigger: "content.analyze.basic";
 };

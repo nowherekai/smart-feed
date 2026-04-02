@@ -76,6 +76,7 @@ function createContentRecord() {
 
 function createBasicHarness() {
   const analysisRecords: Array<Record<string, unknown>> = [];
+  const analysisUpdates: Array<{ data: Record<string, unknown>; id: string }> = [];
   const contentUpdates: Array<Record<string, unknown>> = [];
   const deps: ContentAnalyzeBasicDeps = {
     appEnv: {
@@ -110,6 +111,10 @@ function createBasicHarness() {
         valueScore: 8,
       };
     },
+    async updateAnalysisRecord(id: string, data: Record<string, unknown>) {
+      analysisUpdates.push({ id, data });
+      return createAnalysisRecord({ id, ...data }) as never;
+    },
     async updateContentItem(_contentId: string, data: Record<string, unknown>) {
       contentUpdates.push(data);
     },
@@ -117,6 +122,7 @@ function createBasicHarness() {
 
   return {
     analysisRecords,
+    analysisUpdates,
     contentUpdates,
     deps,
   };
@@ -124,6 +130,7 @@ function createBasicHarness() {
 
 function createHeavyHarness() {
   const analysisRecords: Array<Record<string, unknown>> = [];
+  const analysisUpdates: Array<{ data: Record<string, unknown>; id: string }> = [];
   const contentUpdates: Array<Record<string, unknown>> = [];
   const deps: ContentAnalyzeHeavyDeps = {
     async createAnalysisRecord(data: Record<string, unknown>) {
@@ -156,6 +163,10 @@ function createHeavyHarness() {
         reason: "Worth digesting",
       };
     },
+    async updateAnalysisRecord(id: string, data: Record<string, unknown>) {
+      analysisUpdates.push({ id, data });
+      return createAnalysisRecord({ id, ...data }) as never;
+    },
     async updateContentItem(_contentId: string, data: Record<string, unknown>) {
       contentUpdates.push(data);
     },
@@ -163,6 +174,7 @@ function createHeavyHarness() {
 
   return {
     analysisRecords,
+    analysisUpdates,
     contentUpdates,
     deps,
   };
@@ -204,6 +216,103 @@ test("runContentAnalyzeBasic writes analysis record and enqueues heavy when thre
   expect(harness.analysisRecords).toHaveLength(1);
   expect(harness.contentUpdates.at(-1)).toMatchObject({
     processingError: null,
+  });
+});
+
+test("runContentAnalyzeBasic creates a fresh debug record when new-record mode is requested", async () => {
+  const harness = createBasicHarness();
+  const findCalls: Array<{ modelStrategy: string; promptVersion: string }> = [];
+  harness.deps.findAnalysisRecord = async (_contentId, modelStrategy, promptVersion) => {
+    findCalls.push({ modelStrategy, promptVersion });
+    return null;
+  };
+
+  const result = await runContentAnalyzeBasic(
+    {
+      contentId: "content-1",
+      debugOptions: {
+        continueToHeavy: false,
+        recordMode: "new-record",
+        rerunKey: "rerun-abc",
+        variantTag: "api-b",
+      },
+      trigger: "content.normalize",
+    },
+    harness.deps,
+  );
+
+  expect(findCalls).toEqual([
+    {
+      modelStrategy: "dummy-basic",
+      promptVersion: "basic-analysis-v1~api-b-rerun-abc",
+    },
+  ]);
+  expect(harness.analysisRecords.at(-1)).toMatchObject({
+    promptVersion: "basic-analysis-v1~api-b-rerun-abc",
+  });
+  expect(result.nextStep).toBeNull();
+});
+
+test("runContentAnalyzeBasic overwrites an existing debug slot when overwrite mode is requested", async () => {
+  const harness = createBasicHarness();
+  harness.deps.findAnalysisRecord = async () =>
+    createAnalysisRecord({
+      id: "analysis-existing",
+      promptVersion: "basic-analysis-v1~api-b",
+      valueScore: 3,
+    }) as never;
+
+  const result = await runContentAnalyzeBasic(
+    {
+      contentId: "content-1",
+      debugOptions: {
+        continueToHeavy: false,
+        recordMode: "overwrite",
+        variantTag: "api-b",
+      },
+      trigger: "content.normalize",
+    },
+    harness.deps,
+  );
+
+  expect(harness.analysisRecords).toHaveLength(0);
+  expect(harness.analysisUpdates).toHaveLength(1);
+  expect(harness.analysisUpdates[0]).toMatchObject({
+    id: "analysis-existing",
+  });
+  expect(harness.analysisUpdates[0]?.data).toMatchObject({
+    promptVersion: "basic-analysis-v1~api-b",
+    status: "basic",
+  });
+  expect(result.payload?.analysisRecordId).toBe("analysis-existing");
+  expect(result.payload?.cached).toBe(false);
+  expect(result.nextStep).toBeNull();
+});
+
+test("runContentAnalyzeBasic keeps heavy continuation for debug full-flow runs", async () => {
+  const harness = createBasicHarness();
+
+  const result = await runContentAnalyzeBasic(
+    {
+      contentId: "content-1",
+      debugOptions: {
+        continueToHeavy: true,
+        recordMode: "overwrite",
+        variantTag: "api-b",
+      },
+      trigger: "content.normalize",
+    },
+    harness.deps,
+  );
+
+  expect(result.nextStep?.data).toMatchObject({
+    contentId: "content-1",
+    debugOptions: {
+      continueToHeavy: true,
+      recordMode: "overwrite",
+      variantTag: "api-b",
+    },
+    trigger: "content.analyze.basic",
   });
 });
 
@@ -312,6 +421,36 @@ test("runContentAnalyzeHeavy writes full analysis record and validates evidence 
     processingError: null,
     status: "analyzed",
   });
+});
+
+test("runContentAnalyzeHeavy overwrites an existing debug slot when overwrite mode is requested", async () => {
+  const harness = createHeavyHarness();
+  harness.deps.findAnalysisRecord = async () =>
+    createAnalysisRecord({
+      id: "analysis-heavy-existing",
+      promptVersion: "heavy-summary-v1~api-b",
+      status: "full",
+    }) as never;
+
+  const result = await runContentAnalyzeHeavy(
+    {
+      contentId: "content-1",
+      debugOptions: {
+        recordMode: "overwrite",
+        variantTag: "api-b",
+      },
+      trigger: "content.analyze.basic",
+    },
+    harness.deps,
+  );
+
+  expect(harness.analysisRecords).toHaveLength(0);
+  expect(harness.analysisUpdates).toHaveLength(1);
+  expect(harness.analysisUpdates[0]?.data).toMatchObject({
+    promptVersion: "heavy-summary-v1~api-b",
+  });
+  expect(result.payload?.analysisRecordId).toBe("analysis-heavy-existing");
+  expect(result.payload?.cached).toBe(false);
 });
 
 test("runContentAnalyzeHeavy returns failed when basic analysis record is missing", async () => {

@@ -1,4 +1,5 @@
 import { CalendarDays, ExternalLink } from "lucide-react";
+import Link from "next/link";
 import type { OriginalContentListItem } from "@/app/original-content/types";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
@@ -28,28 +29,33 @@ function formatOriginalContentTime(value: Date, timeZone: string): string {
 export function OriginalContentCard({ record, timeZone }: { record: OriginalContentListItem; timeZone: string }) {
   return (
     <Card className="gap-0 border-border bg-card/80 shadow-sm">
-      <CardHeader className="gap-4 pb-0">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-              <Badge variant="outline" className="text-primary">
-                {record.sourceName}
-              </Badge>
-              {record.author ? <span>by {record.author}</span> : null}
+      <Link
+        href={`/original-content/${record.id}`}
+        className="block rounded-xl transition-colors hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        <CardHeader className="gap-4 pb-0">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                <Badge variant="outline" className="text-primary">
+                  {record.sourceName}
+                </Badge>
+                {record.author ? <span>by {record.author}</span> : null}
+              </div>
+              <CardTitle className="text-2xl font-semibold leading-tight text-foreground">{record.title}</CardTitle>
             </div>
-            <CardTitle className="text-2xl font-semibold leading-tight text-foreground">{record.title}</CardTitle>
-          </div>
 
-          <div className="flex items-center gap-2 text-sm text-muted-foreground md:shrink-0">
-            <CalendarDays className="size-4" />
-            <span>{formatOriginalContentTime(record.effectiveAt, timeZone)}</span>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground md:shrink-0">
+              <CalendarDays className="size-4" />
+              <span>{formatOriginalContentTime(record.effectiveAt, timeZone)}</span>
+            </div>
           </div>
-        </div>
-      </CardHeader>
+        </CardHeader>
 
-      <CardContent className="pt-8">
-        <p className="text-base leading-8 text-muted-foreground">{record.previewText}</p>
-      </CardContent>
+        <CardContent className="pt-8">
+          <p className="text-base leading-8 text-muted-foreground">{record.previewText}</p>
+        </CardContent>
+      </Link>
 
       <CardFooter className="justify-start border-t-0 bg-transparent px-4 pb-4 pt-0">
         <a
