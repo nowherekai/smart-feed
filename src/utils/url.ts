@@ -73,3 +73,18 @@ export function normalizeUrl(url: string): string {
 export function hashUrl(url: string): string {
   return createHash("sha256").update(normalizeUrl(url)).digest("hex");
 }
+
+/**
+ * 将 URL 收敛为适合日志输出的形式：
+ * 保留协议、主机和路径，移除 query/hash，避免敏感参数泄露到日志。
+ */
+export function sanitizeUrlForLogging(url: string): string {
+  try {
+    const parsedUrl = new URL(url);
+    parsedUrl.search = "";
+    parsedUrl.hash = "";
+    return parsedUrl.toString();
+  } catch {
+    return url;
+  }
+}

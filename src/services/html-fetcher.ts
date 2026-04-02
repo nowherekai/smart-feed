@@ -5,7 +5,7 @@
  */
 
 import { DOMParser } from "linkedom";
-import { logger } from "../utils";
+import { logger, sanitizeUrlForLogging } from "../utils";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -64,7 +64,8 @@ function getTextMetricsFromHtml(rawBody: string) {
  */
 export async function fetchPageHtml(url: string, deps: FetchPageHtmlDeps = {}): Promise<string> {
   const fetchImpl = deps.fetchImpl ?? fetch;
-  logger.info("Fetching page HTML", { url });
+  const safeUrlToLog = sanitizeUrlForLogging(url);
+  logger.info("Fetching page HTML", { url: safeUrlToLog });
 
   try {
     const response = await fetchImpl(url, {
@@ -78,7 +79,7 @@ export async function fetchPageHtml(url: string, deps: FetchPageHtmlDeps = {}): 
 
     if (!response.ok) {
       const errorMsg = `[services/html-fetcher] Page fetch returned ${response.status}.`;
-      logger.error(errorMsg, { url, status: response.status });
+      logger.error(errorMsg, { url: safeUrlToLog, status: response.status });
       throw new Error(errorMsg);
     }
 
@@ -86,13 +87,13 @@ export async function fetchPageHtml(url: string, deps: FetchPageHtmlDeps = {}): 
 
     if (!html.trim()) {
       const errorMsg = "[services/html-fetcher] Page fetch returned an empty response.";
-      logger.warn(errorMsg, { url });
+      logger.warn(errorMsg, { url: safeUrlToLog });
       throw new Error(errorMsg);
     }
 
     const isHtml = looksLikeHtml(html);
     logger.info("Page HTML fetched successfully", {
-      url,
+      url: safeUrlToLog,
       htmlLength: html.length,
       isHtml,
     });
@@ -100,7 +101,7 @@ export async function fetchPageHtml(url: string, deps: FetchPageHtmlDeps = {}): 
     return isHtml ? html : `<html><body><pre>${html}</pre></body></html>`;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown fetch error";
-    logger.error("Page HTML fetch failed", { url, error: errorMessage });
+    logger.error("Page HTML fetch failed", { url: safeUrlToLog, error: errorMessage });
     throw error;
   }
 }
