@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { analysisRecords, contentItems } from "@/db/schema";
+import { normalizeDebugVariantTag } from "@/lib/debug-run";
 import { getQueueForTask, type SmartFeedTaskName, smartFeedTaskNames } from "@/queue";
 import type {
   ContentAnalysisDebugMode,
@@ -66,17 +67,6 @@ function normalizeContentId(contentId: string): string | null {
   return normalizedContentId ? normalizedContentId : null;
 }
 
-function normalizeVariantTag(variantTag: string | null | undefined): string | null {
-  const normalizedVariantTag = variantTag
-    ?.trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  return normalizedVariantTag ? normalizedVariantTag.slice(0, 24) : null;
-}
-
 function createRerunKey(): string {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).slice(2, 8);
@@ -89,13 +79,13 @@ function buildDebugOptions(input: ContentDebugActionInput) {
     continueToHeavy: true,
     recordMode: input.recordMode,
     rerunKey: input.recordMode === "new-record" ? createRerunKey() : null,
-    variantTag: normalizeVariantTag(input.variantTag),
+    variantTag: normalizeDebugVariantTag(input.variantTag),
   } as const;
 }
 
 function describeRunMode(input: ContentDebugActionInput): string {
   const modeLabel = input.recordMode === "new-record" ? "new record" : "overwrite";
-  const variantTag = normalizeVariantTag(input.variantTag);
+  const variantTag = normalizeDebugVariantTag(input.variantTag);
 
   return variantTag ? `${modeLabel} (${variantTag})` : modeLabel;
 }

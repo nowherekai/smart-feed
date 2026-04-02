@@ -19,6 +19,7 @@ import {
 } from "../ai";
 import { type AppEnv, getAppEnv } from "../config";
 import { analysisRecords, contentItems, getDb, sources } from "../db";
+import { normalizeDebugVariantTag } from "../lib/debug-run";
 import { createCompletedStepResult, createFailedStepResult, type PipelineStepResult } from "../pipeline/types";
 import { smartFeedTaskNames } from "../queue";
 import { logger } from "../utils";
@@ -289,17 +290,6 @@ function buildHeavyDeps(overrides: ContentAnalyzeHeavyDeps): Required<ContentAna
     updateAnalysisRecord: overrides.updateAnalysisRecord ?? updateAnalysisRecord,
     updateContentItem: overrides.updateContentItem ?? updateContentItem,
   };
-}
-
-function normalizeDebugVariantTag(variantTag: string | null | undefined): string | null {
-  const normalizedVariantTag = variantTag
-    ?.trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  return normalizedVariantTag ? normalizedVariantTag.slice(0, 24) : null;
 }
 
 function buildEffectivePromptVersion(promptVersion: string, debugOptions?: ContentAnalysisDebugOptions): string {
