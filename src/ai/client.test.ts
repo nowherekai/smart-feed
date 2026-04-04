@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ZodType } from "zod";
+import type { AiClientEnv, GenerateStructuredObject, OpenRouterProviderFactory } from "./client";
 import {
   AiConfigurationError,
   AiProviderUnavailableError,
@@ -15,6 +16,14 @@ const baseInput = {
   sourceName: "Example Feed",
   title: "AI 平台更新说明",
 };
+
+const typeCheckedGenerateStructuredObject: GenerateStructuredObject | null = null;
+const typeCheckedOpenRouterProviderFactory: OpenRouterProviderFactory | null = null;
+
+test("client module still exports injectable dependency types", () => {
+  expect(typeCheckedGenerateStructuredObject).toBeNull();
+  expect(typeCheckedOpenRouterProviderFactory).toBeNull();
+});
 
 test("runtime state is disabled when provider is not configured", () => {
   const client = createAiClient({
@@ -226,6 +235,61 @@ test("openrouter mode can generate heavy summary via injected structured generat
   expect(result.points).toHaveLength(3);
   expect(result.evidenceSnippet).toContain("模型评测结果");
   expect(providerFactoryCallCount).toBe(1);
+});
+
+test("client switches provider behavior when mutable env changes runtime state", async () => {
+  const env: AiClientEnv = {
+    aiBasicModel: null,
+    aiHeavyModel: null,
+    aiProvider: "dummy",
+    openRouterApiKey: null,
+    openRouterBaseUrl: "https://openrouter.ai/api/v1",
+  };
+  let providerFactoryCallCount = 0;
+
+  const client = createAiClient({
+    env,
+    generateStructuredObject: async <TOutput>(input: {
+      model: unknown;
+      prompt: string;
+      schema: ZodType<TOutput>;
+      schemaDescription: string;
+      schemaName: string;
+      system: string;
+    }) => ({
+      object: input.schema.parse({
+        categories: ["ai"],
+        entities: ["Example Feed"],
+        keywords: ["provider-switch"],
+        language: "zh",
+        sentiment: "neutral",
+        valueScore: 9,
+      }) as TOutput,
+    }),
+    openRouterProviderFactory: () => {
+      providerFactoryCallCount += 1;
+
+      return {
+        chat(modelId: string) {
+          return { modelId };
+        },
+      };
+    },
+  });
+
+  const first = await client.runBasicAnalysis(baseInput);
+
+  env.aiProvider = "openrouter";
+  env.aiBasicModel = "openai/gpt-4o-mini";
+  env.aiHeavyModel = "openai/gpt-4o";
+  env.openRouterApiKey = "test-key";
+
+  const second = await client.runBasicAnalysis(baseInput);
+
+  expect(first.valueScore).not.toBe(9);
+  expect(second.valueScore).toBe(9);
+  expect(providerFactoryCallCount).toBe(1);
+  expect(client.getAiRuntimeState()).toBe("openrouter");
 });
 
 test("repair helper can normalize localized basic analysis keys and values", () => {

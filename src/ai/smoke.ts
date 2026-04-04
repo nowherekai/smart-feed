@@ -29,7 +29,7 @@ Implied volatility continues to soften across the curve, suggesting options mark
 Downside skew is beginning to rebuild, signalling some return in protective positioning, though levels remain well below those typically associated with stronger hedging demand.
 Gamma positioning has flipped back into supportive territory, reducing downside convexity and pointing to a more stable near-term dealer setup after the recent negative gamma regime.`;
 
-const contentZh = `三十岁前后，有一种感觉很难描述——
+const _contentZh = `三十岁前后，有一种感觉很难描述——
 
 工作是有的，哪怕不算喜欢，也还算稳定。关系也不是没有，朋友、恋人、家人，日子能过。手机里随时有人可以联系，日历上也不缺事情。
 
@@ -163,24 +163,17 @@ function parseSmokeMode(rawMode: string | undefined): SmokeMode {
     return rawMode;
   }
 
-  throw new Error(
-    `[ai/smoke] Unsupported mode "${rawMode}". Expected one of: basic, heavy, all.`,
-  );
+  throw new Error(`[ai/smoke] Unsupported mode "${rawMode}". Expected one of: basic, heavy, all.`);
 }
 
-async function runTask(
-  client: ReturnType<typeof createAiClient>,
-  kind: AiTaskKind,
-): Promise<void> {
+async function runTask(client: ReturnType<typeof createAiClient>, kind: AiTaskKind): Promise<void> {
   logger.info("Running AI smoke task", {
     kind,
     resolvedConfig: client.resolveAiTaskConfig(kind),
   });
 
   const result =
-    kind === "basic"
-      ? await client.runBasicAnalysis(defaultInput)
-      : await client.runHeavySummary(defaultInput);
+    kind === "basic" ? await client.runBasicAnalysis(defaultInput) : await client.runHeavySummary(defaultInput);
 
   console.log(
     JSON.stringify(
