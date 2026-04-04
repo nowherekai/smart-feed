@@ -5,7 +5,7 @@
  */
 
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import type { ZodType } from "zod";
 
 import { type AppEnv, getAppEnv } from "../config";
@@ -450,35 +450,13 @@ const defaultGenerateStructuredObject: GenerateStructuredObject = async ({
   logger.debug(`defaultGenerateStructuredObject`);
   let repairApplied = false;
   let repairErrorMessage: string | null = null;
-  const result = await generateObject({
-    experimental_repairText: async ({ error, text }) => {
-      const repairedObject = tryRepairStructuredObjectText({
-        schema,
-        schemaName,
-        text,
-      });
-
-      if (repairedObject === null) {
-        repairErrorMessage =
-          error instanceof Error ? error.message : String(error);
-        return null;
-      }
-
-      repairApplied = true;
-      logger.warn("Structured AI output repaired before schema validation", {
-        repairError: error instanceof Error ? error.message : String(error),
-        repairedKeys: Object.keys(repairedObject as JsonRecord),
-        schemaName,
-      });
-
-      return JSON.stringify(repairedObject);
-    },
-    model: model as Parameters<typeof generateObject>[0]["model"],
-    prompt,
-    schema,
-    schemaDescription,
-    schemaName,
+  const result = await generateText({
+    model: model as Parameters<typeof generateText>[0]["model"],
     system,
+    prompt,
+    output: Output.object({
+      schema,
+    }),
   });
 
   if (!repairApplied && repairErrorMessage !== null) {
@@ -489,7 +467,7 @@ const defaultGenerateStructuredObject: GenerateStructuredObject = async ({
   }
 
   return {
-    object: result.object,
+    object: result.output,
   };
 };
 
