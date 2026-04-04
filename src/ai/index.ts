@@ -1,10 +1,3 @@
-export type {
-  AiClientDeps,
-  AiClientEnv,
-  AiRuntimeState,
-  AiTaskKind,
-  ResolvedAiTaskConfig,
-} from "./client";
 export {
   AiConfigurationError,
   AiProviderUnavailableError,
@@ -19,3 +12,12 @@ export type { AiPromptDefinition, AiPromptInput, AiPromptVersion, EnabledAiRunti
 export { getPromptDefinition, PROMPTS } from "./prompts";
 export type { BasicAnalysis, HeavySummary } from "./schemas";
 export { BasicAnalysisSchema, HeavySummarySchema } from "./schemas";
+export type {
+  AiClientDeps,
+  AiClientEnv,
+  AiRuntimeState,
+  AiTaskKind,
+  GenerateStructuredObject,
+  OpenRouterProviderFactory,
+  ResolvedAiTaskConfig,
+} from "./types";

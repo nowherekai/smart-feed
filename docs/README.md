@@ -30,6 +30,7 @@
 | [022](changes/arch/022_original-content-detail-page-and-ai-debug-entry.md) | 2026-04-02 | Original Content 详情页与 AI 调试入口 |
 | [023](changes/arch/023_service-layer-structured-logging-and-log-guardrails.md) | 2026-04-02 | 服务层结构化日志增强与日志边界收敛 |
 | [024](changes/arch/024_backend-scoped-log-format-unification.md) | 2026-04-02 | 后端组件化日志格式统一 |
+| [025](changes/arch/025_ai-client-modular-refactor.md) | 2026-04-04 | AI Client 模块化拆分与职责分离 |
 
 ### 运维变更
 
