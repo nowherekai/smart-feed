@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { getAddSourceFeedback, getNextOpmlImportResult, getOpmlImportFeedback } from "./sources-client";
+import {
+  getAddSourceFeedback,
+  getNextOpmlImportResult,
+  getOpmlImportFeedback,
+  getPersistedOpmlImportRunId,
+} from "./sources-client";
 
 test("getAddSourceFeedback marks created result as success and clears input", () => {
   const feedback = getAddSourceFeedback({
@@ -66,6 +71,50 @@ test("getOpmlImportFeedback treats completed batch import as success and clears 
   });
 });
 
+test("getOpmlImportFeedback treats queued import as background success", () => {
+  const feedback = getOpmlImportFeedback({
+    status: "queued",
+    importRunId: "import-run-queued-1",
+    totalCount: 6,
+    createdCount: 0,
+    skippedCount: 0,
+    failedCount: 0,
+    failedItems: [],
+  });
+
+  expect(feedback).toEqual({
+    tone: "success",
+    message: "OPML 已提交，后台开始导入，共 6 条。",
+    shouldClearFile: true,
+    shouldRefresh: false,
+  });
+});
+
+test("getOpmlImportFeedback reports running progress without refresh", () => {
+  const feedback = getOpmlImportFeedback({
+    status: "running",
+    importRunId: "import-run-running-1",
+    totalCount: 6,
+    processedCount: 2,
+    createdCount: 1,
+    skippedCount: 0,
+    failedCount: 1,
+    failedItems: [
+      {
+        inputUrl: "https://example.com/a.xml",
+        errorMessage: "timeout",
+      },
+    ],
+  });
+
+  expect(feedback).toEqual({
+    tone: "success",
+    message: "OPML 正在后台导入，已处理 2/6 条。",
+    shouldClearFile: false,
+    shouldRefresh: false,
+  });
+});
+
 test("getOpmlImportFeedback keeps partial success as success notification", () => {
   const feedback = getOpmlImportFeedback({
     status: "completed",
@@ -124,6 +173,50 @@ test("getNextOpmlImportResult clears previous success when current import fails"
     getNextOpmlImportResult({
       status: "failed",
       message: "OPML import failed: bad xml",
+    }),
+  ).toBeNull();
+});
+
+test("getNextOpmlImportResult ignores queued state", () => {
+  expect(
+    getNextOpmlImportResult({
+      status: "queued",
+      importRunId: "import-run-queued-1",
+      totalCount: 2,
+      createdCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      failedItems: [],
+    }),
+  ).toBeNull();
+});
+
+test("getPersistedOpmlImportRunId keeps active OPML runs", () => {
+  expect(
+    getPersistedOpmlImportRunId({
+      status: "running",
+      importRunId: "import-run-running-1",
+      totalCount: 2,
+      processedCount: 1,
+      createdCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+      failedItems: [],
+    }),
+  ).toBe("import-run-running-1");
+});
+
+test("getPersistedOpmlImportRunId drops completed OPML runs", () => {
+  expect(
+    getPersistedOpmlImportRunId({
+      status: "completed",
+      importRunId: "import-run-completed-1",
+      totalCount: 2,
+      processedCount: 2,
+      createdCount: 1,
+      skippedCount: 1,
+      failedCount: 0,
+      failedItems: [],
     }),
   ).toBeNull();
 });

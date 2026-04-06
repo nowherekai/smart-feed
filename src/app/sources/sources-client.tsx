@@ -6,6 +6,7 @@ import {
   type ChangeEvent,
   type DragEvent,
   type FormEvent,
+  useEffect,
   useOptimistic,
   useRef,
   useState,
@@ -15,9 +16,11 @@ import { toast } from "sonner";
 import {
   type AddSourceResult,
   addSource,
+  getOpmlImportRunStatus,
   type ImportSourcesFromOpmlResult,
   importSourcesFromOpml,
   removeSource,
+  type SourceImportRunStatusResult,
   toggleSourceStatus,
 } from "@/app/actions/source-actions";
 import type { SourceListItem } from "@/app/sources/types";
@@ -42,7 +45,11 @@ type OptimisticSourceAction =
   | { type: "remove"; id: string }
   | { type: "toggle"; id: string; status: SourceListItem["status"] };
 
-type CompletedOpmlImportResult = Extract<ImportSourcesFromOpmlResult, { status: "completed" }>;
+type OpmlImportDisplayState = ImportSourcesFromOpmlResult | SourceImportRunStatusResult;
+type CompletedOpmlImportResult =
+  | Extract<ImportSourcesFromOpmlResult, { status: "completed" }>
+  | Extract<SourceImportRunStatusResult, { status: "completed" }>;
+const OPML_IMPORT_RUN_STORAGE_KEY = "smart-feed:opml-import-run-id";
 
 type AddSourceFeedback = {
   message: string;
@@ -58,8 +65,39 @@ type OpmlImportFeedback = {
   tone: "success" | "error";
 };
 
-export function getNextOpmlImportResult(result: ImportSourcesFromOpmlResult): CompletedOpmlImportResult | null {
-  return result.status === "completed" ? result : null;
+export function getNextOpmlImportResult(result: OpmlImportDisplayState): CompletedOpmlImportResult | null {
+  return result.status === "completed" ? (result as CompletedOpmlImportResult) : null;
+}
+
+export function getPersistedOpmlImportRunId(state: OpmlImportDisplayState | null): string | null {
+  if (!state || !("importRunId" in state) || !isActiveOpmlImportStatus(state.status)) {
+    return null;
+  }
+
+  return state.importRunId;
+}
+
+function isActiveOpmlImportStatus(status: OpmlImportDisplayState["status"]): boolean {
+  return status === "queued" || status === "pending" || status === "running";
+}
+
+function getOpmlImportStatusLabel(status: OpmlImportDisplayState["status"]): string {
+  switch (status) {
+    case "queued":
+      return "已提交";
+    case "pending":
+      return "等待执行";
+    case "running":
+      return "导入中";
+    case "completed":
+      return "已完成";
+    case "failed":
+      return "失败";
+    case "not_found":
+      return "未找到";
+    default:
+      return "未知状态";
+  }
 }
 
 export function getAddSourceFeedback(result: AddSourceResult): AddSourceFeedback {
@@ -95,7 +133,34 @@ export function getAddSourceFeedback(result: AddSourceResult): AddSourceFeedback
   }
 }
 
-export function getOpmlImportFeedback(result: ImportSourcesFromOpmlResult): OpmlImportFeedback {
+export function getOpmlImportFeedback(result: OpmlImportDisplayState): OpmlImportFeedback {
+  if (result.status === "queued") {
+    return {
+      tone: "success",
+      message: `OPML 已提交，后台开始导入，共 ${result.totalCount} 条。`,
+      shouldClearFile: true,
+      shouldRefresh: false,
+    };
+  }
+
+  if (result.status === "pending" || result.status === "running") {
+    return {
+      tone: "success",
+      message: `OPML 正在后台导入，已处理 ${result.processedCount}/${result.totalCount} 条。`,
+      shouldClearFile: false,
+      shouldRefresh: false,
+    };
+  }
+
+  if (result.status === "not_found") {
+    return {
+      tone: "error",
+      message: result.message || "未找到导入任务。",
+      shouldClearFile: false,
+      shouldRefresh: false,
+    };
+  }
+
   if (result.status === "failed") {
     return {
       tone: "error",
@@ -132,9 +197,10 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
   const router = useRouter();
   const [newSourceUrl, setNewSourceUrl] = useState("");
   const [selectedOpmlFile, setSelectedOpmlFile] = useState<File | null>(null);
-  const [opmlImportResult, setOpmlImportResult] = useState<CompletedOpmlImportResult | null>(null);
+  const [opmlImportState, setOpmlImportState] = useState<OpmlImportDisplayState | null>(null);
   const [isOpmlDragActive, setIsOpmlDragActive] = useState(false);
   const opmlFileInputRef = useRef<HTMLInputElement | null>(null);
+  const notifiedTerminalRunIdsRef = useRef(new Set<string>());
   const [isSourceMutationPending, startSourceMutationTransition] = useTransition();
   const [isOpmlImportPending, startOpmlImportTransition] = useTransition();
 
@@ -153,6 +219,93 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
       }
     },
   );
+
+  useEffect(() => {
+    let isCancelled = false;
+    const persistedRunId = window.localStorage.getItem(OPML_IMPORT_RUN_STORAGE_KEY);
+
+    if (!persistedRunId) {
+      return;
+    }
+
+    void (async () => {
+      const restoredState = await getOpmlImportRunStatus(persistedRunId);
+
+      if (isCancelled) {
+        return;
+      }
+
+      if (restoredState.status === "not_found") {
+        window.localStorage.removeItem(OPML_IMPORT_RUN_STORAGE_KEY);
+        return;
+      }
+
+      setOpmlImportState(restoredState);
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const persistedRunId = getPersistedOpmlImportRunId(opmlImportState);
+
+    if (persistedRunId) {
+      window.localStorage.setItem(OPML_IMPORT_RUN_STORAGE_KEY, persistedRunId);
+      return;
+    }
+
+    window.localStorage.removeItem(OPML_IMPORT_RUN_STORAGE_KEY);
+  }, [opmlImportState]);
+
+  useEffect(() => {
+    if (!opmlImportState || !("importRunId" in opmlImportState) || !isActiveOpmlImportStatus(opmlImportState.status)) {
+      return;
+    }
+
+    let isCancelled = false;
+    const timerId = window.setTimeout(async () => {
+      const nextState = await getOpmlImportRunStatus(opmlImportState.importRunId);
+
+      if (isCancelled) {
+        return;
+      }
+
+      setOpmlImportState(nextState);
+
+      if (!("importRunId" in nextState)) {
+        toast.error(nextState.message);
+        return;
+      }
+
+      if (nextState.status === "completed" || nextState.status === "failed") {
+        if (notifiedTerminalRunIdsRef.current.has(nextState.importRunId)) {
+          return;
+        }
+
+        notifiedTerminalRunIdsRef.current.add(nextState.importRunId);
+
+        const feedback = getOpmlImportFeedback(nextState);
+
+        if (feedback.shouldRefresh) {
+          router.refresh();
+        }
+
+        if (feedback.tone === "success") {
+          toast.success(feedback.message);
+          return;
+        }
+
+        toast.error(feedback.message);
+      }
+    }, 1_500);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [opmlImportState, router]);
 
   const handleAddSource = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -272,7 +425,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
       try {
         const result = await importSourcesFromOpml(opmlContent);
         const feedback = getOpmlImportFeedback(result);
-        setOpmlImportResult(getNextOpmlImportResult(result));
+        setOpmlImportState(result);
 
         if (feedback.shouldClearFile) {
           clearSelectedOpmlFile();
@@ -295,14 +448,21 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
     });
   };
 
-  const importSummaryCards = opmlImportResult
-    ? [
-        { label: "总计", value: opmlImportResult.totalCount },
-        { label: "已新增", value: opmlImportResult.createdCount },
-        { label: "已存在", value: opmlImportResult.skippedCount },
-        { label: "失败", value: opmlImportResult.failedCount },
-      ]
-    : [];
+  const importSummaryCards =
+    opmlImportState && "importRunId" in opmlImportState
+      ? [
+          { label: "总计", value: opmlImportState.totalCount },
+          {
+            label: "已处理",
+            value: "processedCount" in opmlImportState ? opmlImportState.processedCount : opmlImportState.totalCount,
+          },
+          { label: "已新增", value: opmlImportState.createdCount },
+          { label: "已存在", value: opmlImportState.skippedCount },
+          { label: "失败", value: opmlImportState.failedCount },
+        ]
+      : [];
+  const isOpmlBackgroundActive = opmlImportState ? isActiveOpmlImportStatus(opmlImportState.status) : false;
+  const isOpmlBusy = isOpmlImportPending || isOpmlBackgroundActive;
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-2">
@@ -381,30 +541,32 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
               </button>
 
               <div className="flex flex-wrap gap-3">
-                <Button type="button" variant="outline" onClick={openOpmlFilePicker} disabled={isOpmlImportPending}>
+                <Button type="button" variant="outline" onClick={openOpmlFilePicker} disabled={isOpmlBusy}>
                   {selectedOpmlFile ? "更换文件" : "选择文件"}
                 </Button>
                 {selectedOpmlFile ? (
-                  <Button type="button" variant="ghost" onClick={clearSelectedOpmlFile} disabled={isOpmlImportPending}>
+                  <Button type="button" variant="ghost" onClick={clearSelectedOpmlFile} disabled={isOpmlBusy}>
                     <X size={14} />
                     清空
                   </Button>
                 ) : null}
-                <Button type="button" onClick={handleImportOpml} disabled={isOpmlImportPending || !selectedOpmlFile}>
-                  {isOpmlImportPending ? "导入中..." : "开始导入"}
+                <Button type="button" onClick={handleImportOpml} disabled={isOpmlBusy || !selectedOpmlFile}>
+                  {isOpmlBusy ? "导入中..." : "开始导入"}
                 </Button>
               </div>
             </TabsContent>
           </Tabs>
 
-          {opmlImportResult ? (
+          {opmlImportState && "importRunId" in opmlImportState ? (
             <div className="space-y-4 rounded-xl border border-border bg-muted/10 p-4">
               <div className="space-y-1">
                 <div className="text-sm font-medium">本次导入结果</div>
-                <div className="text-xs text-muted-foreground">导入运行 ID：{opmlImportResult.importRunId}</div>
+                <div className="text-xs text-muted-foreground">
+                  状态：{getOpmlImportStatusLabel(opmlImportState.status)} · 导入运行 ID：{opmlImportState.importRunId}
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                 {importSummaryCards.map((item) => (
                   <div key={item.label} className="rounded-lg border border-border bg-background/80 p-3">
                     <div className="text-xs text-muted-foreground">{item.label}</div>
@@ -413,13 +575,13 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
                 ))}
               </div>
 
-              {opmlImportResult.failedItems.length > 0 ? (
+              {opmlImportState.failedItems.length > 0 ? (
                 <div className="space-y-2">
                   <div className="text-sm font-medium">失败明细</div>
                   <div className="space-y-2">
-                    {opmlImportResult.failedItems.map((item) => (
+                    {opmlImportState.failedItems.map((item) => (
                       <div
-                        key={`${opmlImportResult.importRunId}:${item.inputUrl}:${item.errorMessage}`}
+                        key={`${opmlImportState.importRunId}:${item.inputUrl}:${item.errorMessage}`}
                         className="rounded-lg border border-border bg-background/80 p-3"
                       >
                         <div className="truncate text-xs font-medium">{item.inputUrl}</div>

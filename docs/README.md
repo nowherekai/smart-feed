@@ -32,6 +32,7 @@
 | [024](changes/arch/024_backend-scoped-log-format-unification.md) | 2026-04-02 | 后端组件化日志格式统一 |
 | [025](changes/arch/025_ai-client-modular-refactor.md) | 2026-04-04 | AI Client 模块化拆分与职责分离 |
 | [026](changes/arch/026_ai-summary-contract-reset-and-digest-link-first.md) | 2026-04-06 | AI 摘要契约重构与 Digest 回链优先 |
+| [027](changes/arch/027_opml-import-background-runtime-and-concurrency.md) | 2026-04-06 | OPML 导入后台化与受控并发收口 |
 
 ### 运维变更
 
