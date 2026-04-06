@@ -33,12 +33,10 @@ export type SourceSyncCursor = {
  * AI 分析摘要结果类型定义
  */
 export type AnalysisSummary = {
-  /** 一句话摘要 */
-  oneline: string;
-  /** 关键要点列表 */
-  points: string[];
-  /** 推荐或关注理由 */
-  reason: string;
+  /** 整体摘要 */
+  summary: string;
+  /** 段落摘要列表 */
+  paragraphSummaries: string[];
 };
 
 /**
@@ -91,8 +89,8 @@ export const contentStatusEnum = pgEnum("content_status", [
 /** 原始内容格式 */
 export const rawContentFormatEnum = pgEnum("raw_content_format", ["html", "text", "markdown", "transcript"]);
 
-/** 分析记录状态：基础分析、完整深度分析、已拒绝（不合规） */
-export const analysisStatusEnum = pgEnum("analysis_status", ["basic", "full", "rejected"]);
+/** 分析记录状态：基础分析、完整深度分析 */
+export const analysisStatusEnum = pgEnum("analysis_status", ["basic", "full"]);
 
 /** 摘要报告周期：日报、周报 */
 export const digestPeriodEnum = pgEnum("digest_period", ["daily", "weekly"]);
@@ -346,14 +344,10 @@ export const analysisRecords = pgTable(
     entities: jsonb("entities").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     /** 内容语种 */
     language: varchar("language", { length: 16 }),
-    /** 情感分析结果 */
-    sentiment: varchar("sentiment", { length: 32 }),
     /** 价值评分 (0-10) */
     valueScore: integer("value_score").notNull(),
     /** 深度分析摘要负载 */
     summary: jsonb("summary").$type<AnalysisSummary | null>(),
-    /** 证据片段（原文摘录） */
-    evidenceSnippet: text("evidence_snippet"),
     /** 冗余原文 URL (用于摘要展示) */
     originalUrl: text("original_url").notNull(),
     /** 冗余来源名称 */

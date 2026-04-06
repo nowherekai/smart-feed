@@ -1,5 +1,5 @@
 {
-  "id": "b46fce52-340c-4c1c-990d-d495ff2a8d3b",
+  "id": "24193d7c-f848-4884-acc6-406c326646d0",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -66,12 +66,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "sentiment": {
-          "name": "sentiment",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "value_score": {
           "name": "value_score",
           "type": "integer",
@@ -81,12 +75,6 @@
         "summary": {
           "name": "summary",
           "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "evidence_snippet": {
-          "name": "evidence_snippet",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -229,8 +217,12 @@
           "name": "analysis_records_content_id_content_items_id_fk",
           "tableFrom": "analysis_records",
           "tableTo": "content_items",
-          "columnsFrom": ["content_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "content_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -238,8 +230,12 @@
           "name": "analysis_records_source_id_sources_id_fk",
           "tableFrom": "analysis_records",
           "tableTo": "sources",
-          "columnsFrom": ["source_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -333,8 +329,12 @@
           "name": "content_item_raws_content_id_content_items_id_fk",
           "tableFrom": "content_item_raws",
           "tableTo": "content_items",
-          "columnsFrom": ["content_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "content_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -603,8 +603,12 @@
           "name": "content_items_source_id_sources_id_fk",
           "tableFrom": "content_items",
           "tableTo": "sources",
-          "columnsFrom": ["source_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -721,8 +725,12 @@
           "name": "digest_items_digest_id_digest_reports_id_fk",
           "tableFrom": "digest_items",
           "tableTo": "digest_reports",
-          "columnsFrom": ["digest_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "digest_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -730,8 +738,12 @@
           "name": "digest_items_analysis_record_id_analysis_records_id_fk",
           "tableFrom": "digest_items",
           "tableTo": "analysis_records",
-          "columnsFrom": ["analysis_record_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "analysis_record_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1117,8 +1129,12 @@
           "name": "pipeline_runs_content_id_content_items_id_fk",
           "tableFrom": "pipeline_runs",
           "tableTo": "content_items",
-          "columnsFrom": ["content_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "content_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -1126,8 +1142,12 @@
           "name": "pipeline_runs_digest_id_digest_reports_id_fk",
           "tableFrom": "pipeline_runs",
           "tableTo": "digest_reports",
-          "columnsFrom": ["digest_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "digest_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1230,8 +1250,12 @@
           "name": "source_import_run_items_import_run_id_source_import_runs_id_fk",
           "tableFrom": "source_import_run_items",
           "tableTo": "source_import_runs",
-          "columnsFrom": ["import_run_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "import_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1239,8 +1263,12 @@
           "name": "source_import_run_items_source_id_sources_id_fk",
           "tableFrom": "source_import_run_items",
           "tableTo": "sources",
-          "columnsFrom": ["source_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1648,8 +1676,12 @@
           "name": "step_runs_pipeline_run_id_pipeline_runs_id_fk",
           "tableFrom": "step_runs",
           "tableTo": "pipeline_runs",
-          "columnsFrom": ["pipeline_run_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "pipeline_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1665,27 +1697,50 @@
     "public.analysis_status": {
       "name": "analysis_status",
       "schema": "public",
-      "values": ["basic", "full", "rejected"]
+      "values": [
+        "basic",
+        "full"
+      ]
     },
     "public.content_kind": {
       "name": "content_kind",
       "schema": "public",
-      "values": ["article", "video-transcript", "podcast-transcript", "newsletter"]
+      "values": [
+        "article",
+        "video-transcript",
+        "podcast-transcript",
+        "newsletter"
+      ]
     },
     "public.content_status": {
       "name": "content_status",
       "schema": "public",
-      "values": ["sentinel", "raw", "normalized", "analyzed", "digested", "failed"]
+      "values": [
+        "sentinel",
+        "raw",
+        "normalized",
+        "analyzed",
+        "digested",
+        "failed"
+      ]
     },
     "public.digest_period": {
       "name": "digest_period",
       "schema": "public",
-      "values": ["daily", "weekly"]
+      "values": [
+        "daily",
+        "weekly"
+      ]
     },
     "public.digest_status": {
       "name": "digest_status",
       "schema": "public",
-      "values": ["draft", "ready", "sent", "failed"]
+      "values": [
+        "draft",
+        "ready",
+        "sent",
+        "failed"
+      ]
     },
     "public.feedback_signal": {
       "name": "feedback_signal",
@@ -1706,37 +1761,68 @@
     "public.feedback_target_type": {
       "name": "feedback_target_type",
       "schema": "public",
-      "values": ["content", "source", "topic"]
+      "values": [
+        "content",
+        "source",
+        "topic"
+      ]
     },
     "public.import_item_result": {
       "name": "import_item_result",
       "schema": "public",
-      "values": ["created", "skipped_duplicate", "failed"]
+      "values": [
+        "created",
+        "skipped_duplicate",
+        "failed"
+      ]
     },
     "public.import_mode": {
       "name": "import_mode",
       "schema": "public",
-      "values": ["single", "opml"]
+      "values": [
+        "single",
+        "opml"
+      ]
     },
     "public.raw_content_format": {
       "name": "raw_content_format",
       "schema": "public",
-      "values": ["html", "text", "markdown", "transcript"]
+      "values": [
+        "html",
+        "text",
+        "markdown",
+        "transcript"
+      ]
     },
     "public.run_status": {
       "name": "run_status",
       "schema": "public",
-      "values": ["pending", "running", "completed", "failed"]
+      "values": [
+        "pending",
+        "running",
+        "completed",
+        "failed"
+      ]
     },
     "public.source_status": {
       "name": "source_status",
       "schema": "public",
-      "values": ["active", "paused", "blocked"]
+      "values": [
+        "active",
+        "paused",
+        "blocked"
+      ]
     },
     "public.source_type": {
       "name": "source_type",
       "schema": "public",
-      "values": ["rss-source", "podcast-source", "newsletter-source", "wechat-source", "youtube-source"]
+      "values": [
+        "rss-source",
+        "podcast-source",
+        "newsletter-source",
+        "wechat-source",
+        "youtube-source"
+      ]
     }
   },
   "schemas": {},

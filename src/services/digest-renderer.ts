@@ -1,17 +1,13 @@
 import { createLogger } from "../utils";
 
 type DigestRenderableSummary = {
-  oneline: string;
-  points: string[];
-  reason: string;
+  paragraphSummaries: string[];
+  summary: string;
 };
 
 type DigestRenderableItem = {
-  contentTraceId: string;
-  evidenceSnippet: string;
   originalUrl: string;
   sourceName: string;
-  sourceTraceId: string;
   summary: DigestRenderableSummary;
   title: string;
 };
@@ -31,24 +27,15 @@ function sanitizeInlineText(value: string): string {
   return value.replace(/\r?\n+/g, " ").trim();
 }
 
-function sanitizeBlockText(value: string): string {
-  return value.replace(/\r\n/g, "\n").trim();
-}
-
 function renderItem(item: DigestRenderableItem): string {
   const lines = [
     `### ${sanitizeInlineText(item.title)}`,
-    `> ${sanitizeInlineText(item.summary.oneline)}`,
+    `> ${sanitizeInlineText(item.summary.summary)}`,
     "",
-    "**关键要点**:",
-    ...item.summary.points.map((point) => `- ${sanitizeInlineText(point)}`),
+    ...item.summary.paragraphSummaries.map((point) => `- ${sanitizeInlineText(point)}`),
     "",
-    `**关注理由**: ${sanitizeInlineText(item.summary.reason)}`,
-    "",
-    `来源: ${sanitizeInlineText(item.sourceName)} (\`${sanitizeInlineText(item.sourceTraceId)}\`)`,
-    `内容追踪: \`${sanitizeInlineText(item.contentTraceId)}\``,
+    `来源: ${sanitizeInlineText(item.sourceName)}`,
     `原文: [原文链接](<${item.originalUrl}>)`,
-    `证据: ${sanitizeBlockText(item.evidenceSnippet)}`,
   ];
 
   return lines.join("\n");

@@ -39,14 +39,11 @@ export type ContentDetailAnalysisRecord = {
   keywords: string[];
   entities: string[];
   language: string | null;
-  sentiment: string | null;
   valueScore: number;
   summary: {
-    oneline: string;
-    points: string[];
-    reason: string;
+    paragraphSummaries: string[];
+    summary: string;
   } | null;
-  evidenceSnippet: string | null;
   createdAt: Date;
 };
 

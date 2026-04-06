@@ -75,7 +75,7 @@ function inferKeywords(text: string): string[] {
     .map((token) => token.trim())
     .filter((token, index, list) => list.indexOf(token) === index);
 
-  return keywords.slice(0, 8);
+  return keywords.slice(0, 4);
 }
 
 function inferEntities(input: AiPromptInput): string[] {
@@ -85,28 +85,7 @@ function inferEntities(input: AiPromptInput): string[] {
     entities.add(match[0]);
   }
 
-  return Array.from(entities).slice(0, 6);
-}
-
-function inferSentiment(text: string): BasicAnalysis["sentiment"] {
-  const positivePattern = /improve|growth|突破|增长|提升|机会/u;
-  const negativePattern = /risk|issue|fail|warning|下降|风险|故障/u;
-  const hasPositive = positivePattern.test(text);
-  const hasNegative = negativePattern.test(text);
-
-  if (hasPositive && hasNegative) {
-    return "mixed";
-  }
-
-  if (hasPositive) {
-    return "positive";
-  }
-
-  if (hasNegative) {
-    return "negative";
-  }
-
-  return "neutral";
+  return Array.from(entities).slice(0, 4);
 }
 
 function inferValueScore(text: string, categories: string[]): number {
@@ -143,23 +122,18 @@ function buildDummyBasicAnalysis(input: AiPromptInput): BasicAnalysis {
     entities,
     keywords,
     language: inferLanguage(combinedText),
-    sentiment: inferSentiment(combinedText),
     valueScore: inferValueScore(combinedText, categories),
   };
 }
 
 function buildDummyHeavySummary(input: AiPromptInput): HeavySummary {
   const phrases = collectCandidatePhrases(input);
-  const evidenceSnippet = truncateText(phrases[0] ?? input.title, 180);
-  const points = phrases.slice(0, 3).map((phrase) => truncateText(phrase, 90));
-  const categories = inferCategories(`${input.title}\n${input.cleanedMd}`);
-  const valueScore = inferValueScore(`${input.title}\n${input.cleanedMd}`, categories);
+  const paragraphSummaries = phrases.slice(0, 4).map((phrase) => truncateText(phrase, 90));
+  const summaryParts = [input.title, paragraphSummaries[0]].filter((part): part is string => Boolean(part));
 
   return {
-    evidenceSnippet,
-    oneline: truncateText(`${input.sourceName}：${input.title}`, 70),
-    points,
-    reason: `Dummy provider 认为这篇内容的价值分约为 ${valueScore}/10，适合后续由真实模型接管验证。`,
+    paragraphSummaries,
+    summary: truncateText(summaryParts.join("："), 180),
   };
 }
 

@@ -150,7 +150,7 @@
 
 **验收标准**:
 - 对每条 `content-item` 生成 `analysis-record`
-- 提取: `category`(分类标签), `keywords`(1-5个), `entities`(公司/人名/产品/地点), `language`, `sentiment`, `value_score`(0-10)
+- 提取: `category`(分类标签), `keywords`(1-5个), `entities`(公司/人名/产品/地点), `language`, `value_score`(0-10)
 - 使用轻模型(如 Claude Haiku)
 - 处理时间 < 2秒/篇
 
@@ -171,19 +171,17 @@
 **以便** 用户快速理解核心要点
 
 **验收标准**:
-- 生成三部分摘要:
-  - `oneline`: 一句话总结
-  - `points`: 3个关键要点
-  - `reason`: 为什么值得关注
-- 必须提取 `evidence_snippet`(原文证据片段)
-- 关联 `content_trace_id`, `original_url` 和 `source_trace_id`
+- 生成结构化摘要:
+  - `summary`: 一段整体摘要
+  - `paragraphSummaries`: 段落摘要列表
+- 摘要结果保留 `original_url` 与 `source_name`
 
 **技术约束**:
 - 仅对 `value_score > 6` 的内容执行
 - 使用 Sonnet 级别模型
 - 模型策略标记为 `"sonnet-summary"`
-- 证据片段长度 100-300 字符
-- 缺少 `content_trace_id` / `original_url` / `evidence_snippet` 的摘要不得进入 digest
+- `paragraphSummaries` 允许为空数组
+- 缺少 `summary` 或 `original_url` 的摘要不得进入 digest
 
 **优先级**: P0 (MVP 核心)
 
@@ -218,7 +216,7 @@
 **以便** 生成结构化的日报
 
 **验收标准**:
-- 收集本次 Digest 统计区间内所有 `analysis-record` (已完成摘要且 traceability 元数据完整的)
+- 收集本次 Digest 统计区间内所有 `analysis-record` (已完成摘要且存在可渲染摘要的)
 - 按 `category` 分组
 - 每组内按 `value_score` 降序排列
 - 生成 `digest-report` 实体,编码为 `daily:YYYY-MM-DD`,其中日期取发送日本地日期
@@ -247,7 +245,7 @@
   - 主题分组标题
   - 每条内容的摘要卡片
   - 原文链接(可点击)
-  - 证据片段
+  - 段落摘要列表
 - 支持配置收件邮箱
 
 **技术约束**:
@@ -260,25 +258,24 @@
 
 ---
 
-### US-4.3 可追溯性验证 [Light]
+### US-4.3 原文回链阅读 [Light]
 
 **作为** 用户
 **我想要** 从摘要直接跳转到原文
-**以便** 验证 AI 结论的准确性
+**以便** 继续深读和核对上下文
 
 **验收标准**:
 - 每条摘要必须显示:
-  - 来源名称与 `source_trace_id`
-  - `content_trace_id`(可短显示为 trace id 或可点击查看详情)
+  - 来源名称
   - 原文链接(`original_url`,可点击)
-  - 证据片段(`evidence_snippet`)
+  - 结构化摘要内容
 - 点击链接直达原文页面
-- 若缺少 `content_trace_id` / `original_url` / `evidence_snippet`,该摘要不得进入 digest
+- 若缺少 `original_url`,该摘要不得进入 digest
 
 **技术约束**:
 - 链接有效性检查(可选)
-- `digest-report` 与邮件正文都必须保留完整 traceability 元数据
-- 证据片段高亮显示(未来优化)
+- `digest-report` 与邮件正文都必须保留原文链接
+- 摘要列表按 `paragraphSummaries` 顺序展示
 
 **优先级**: P0 (MVP 核心)
 
@@ -389,7 +386,7 @@
 
 **作为** 系统架构
 **我需要** 严格分离原始数据与加工数据
-**以便** 保证可追溯性和数据完整性
+**以便** 保证数据边界清晰和内容完整性
 
 **验收标准**:
 - `raw_body` 永不被覆盖或修改
@@ -467,7 +464,7 @@
 - US-3.2: 深度摘要
 - US-4.1: 按主题组织日报
 - US-4.2: 邮件投递
-- US-4.3: 可追溯性验证
+- US-4.3: 原文回链阅读
 
 **验收标准**:
 - 导入 10 个 RSS 源
@@ -533,7 +530,7 @@
 | MAS (最小可供性故事) | 对应用户故事 | 验收标准覆盖 |
 |----------------------|-------------|-------------|
 | **MAS-1**: RSS → 标准化内容池 | US-1.1, US-1.2, US-2.1, US-2.2 | AC-1, AC-2 |
-| **MAS-2**: 智能分析与可追溯摘要 | US-3.1, US-3.2, US-3.3, US-4.3 | AC-3 |
+| **MAS-2**: 智能分析与结构化摘要 | US-3.1, US-3.2, US-3.3, US-4.3 | AC-3 |
 | **MAS-3**: 日报编排与投递闭环 | US-4.1, US-4.2, US-3.3, US-6.2 | AC-6 |
 | **MAS-4**: 反馈重塑个人情报流（后续迭代） | US-5.1, US-5.2, US-5.3, US-5.4, US-1.3 | AC-4, AC-5 |
 
@@ -545,7 +542,7 @@
 | **P2 内容转化** | US-2.1, US-2.2 |
 | **P3 智能分析** | US-3.1, US-3.2, US-3.3 |
 | **P4 摘要编排与投递** | US-4.1, US-4.2 |
-| **P5 可追溯阅读** | US-4.3 |
+| **P5 原文回链阅读** | US-4.3 |
 | **P6 调优反馈（后续迭代）** | US-5.1, US-5.2, US-5.3, US-5.4 |
 | **S1 成本控制策略** | US-3.1, US-3.3, US-6.2 |
 | **S2 摘要风格偏好** | US-5.4 |
@@ -557,7 +554,7 @@
 | 授权访问边界 | US-6.3 |
 | 不存储音视频文件 | US-6.3 |
 | 原始/加工数据分离 | US-6.1 |
-| AI 结论可追溯 | US-3.2, US-4.1, US-4.3 |
+| 摘要可回链原文 | US-3.2, US-4.1, US-4.3 |
 | 反馈作为控制信号 | US-5.1, US-5.2, US-5.3, US-5.4 |
 | 分层处理控制成本 | US-3.1, US-3.3, US-6.2 |
 

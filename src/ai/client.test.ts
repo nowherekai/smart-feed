@@ -74,10 +74,8 @@ test("dummy provider returns deterministic basic analysis and heavy summary", as
   expect(basic.valueScore).toBeGreaterThanOrEqual(4);
   expect(basic.keywords.length).toBeGreaterThan(0);
 
-  expect(heavy.oneline).toContain("AI 平台更新说明");
-  expect(heavy.points.length).toBeGreaterThan(0);
-  expect(heavy.reason).toContain("Dummy provider");
-  expect(heavy.evidenceSnippet.length).toBeGreaterThan(0);
+  expect(heavy.summary).toContain("AI 平台更新说明");
+  expect(heavy.paragraphSummaries.length).toBeGreaterThan(0);
 });
 
 test("openrouter mode requires api key and model ids", async () => {
@@ -140,7 +138,6 @@ test("openrouter mode assembles provider config and delegates structured generat
           entities: ["Example Feed"],
           keywords: ["ai", "platform"],
           language: "zh",
-          sentiment: "neutral",
           valueScore: 8,
         }) as TOutput,
       };
@@ -203,7 +200,6 @@ test("openrouter mode can generate heavy summary via injected structured generat
             entities: ["Example Feed"],
             keywords: ["ai", "platform"],
             language: "zh",
-            sentiment: "neutral",
             valueScore: 7,
           }) as TOutput,
         };
@@ -211,10 +207,8 @@ test("openrouter mode can generate heavy summary via injected structured generat
 
       return {
         object: schema.parse({
-          evidenceSnippet: "AI 平台发布了新的模型评测结果",
-          oneline: "Example Feed：AI 平台更新说明",
-          points: ["模型评测结果更新", "讨论部署成本", "提到后续路线图"],
-          reason: "这篇文章直接影响后续选型。",
+          paragraphSummaries: ["模型评测结果更新", "讨论部署成本", "提到后续路线图"],
+          summary: "这篇文章概括了模型评测更新、部署成本与后续路线图。",
         }) as TOutput,
       };
     },
@@ -232,8 +226,8 @@ test("openrouter mode can generate heavy summary via injected structured generat
   const result = await client.runHeavySummary(baseInput);
   await client.runBasicAnalysis(baseInput);
 
-  expect(result.points).toHaveLength(3);
-  expect(result.evidenceSnippet).toContain("模型评测结果");
+  expect(result.paragraphSummaries).toHaveLength(3);
+  expect(result.summary).toContain("部署成本");
   expect(providerFactoryCallCount).toBe(1);
 });
 
@@ -262,7 +256,6 @@ test("client switches provider behavior when mutable env changes runtime state",
         entities: ["Example Feed"],
         keywords: ["provider-switch"],
         language: "zh",
-        sentiment: "neutral",
         valueScore: 9,
       }) as TOutput,
     }),
@@ -301,7 +294,6 @@ test("repair helper can normalize localized basic analysis keys and values", () 
       关键词: ["smart-feed", "结构化输出"],
       实体: ["smart-feed", "AI Smoke Test"],
       语言: "中文",
-      情绪: "中性",
       价值分: 0.65,
     }),
   });
@@ -311,7 +303,6 @@ test("repair helper can normalize localized basic analysis keys and values", () 
     keywords: ["smart-feed", "结构化输出"],
     entities: ["smart-feed", "AI Smoke Test"],
     language: "zh",
-    sentiment: "neutral",
     valueScore: 7,
   });
 });
@@ -323,19 +314,15 @@ test("repair helper can normalize heavy summary code-fenced payload", () => {
     text: [
       "```json",
       JSON.stringify({
-        一句话总结: "这是一个摘要",
-        要点: ["第一点", "第二点"],
-        关注理由: "值得继续跟进。",
-        证据片段: "原文中的关键句子。",
+        整体摘要: "这是一个摘要",
+        段落摘要: ["第一点", "第二点"],
       }),
       "```",
     ].join("\n"),
   });
 
   expect(repaired).toEqual({
-    oneline: "这是一个摘要",
-    points: ["第一点", "第二点"],
-    reason: "值得继续跟进。",
-    evidenceSnippet: "原文中的关键句子。",
+    paragraphSummaries: ["第一点", "第二点"],
+    summary: "这是一个摘要",
   });
 });

@@ -21,18 +21,23 @@ export const defaultGenerateStructuredObject: GenerateStructuredObject = async (
     schemaName,
   });
 
-  const result = await generateText({
-    model: model as Parameters<typeof generateText>[0]["model"],
-    output: Output.object({
-      schema,
-    }),
-    prompt,
-    system,
-  });
+  try {
+    const result = await generateText({
+      model: model as Parameters<typeof generateText>[0]["model"],
+      output: Output.object({
+        schema,
+      }),
+      system,
+      prompt,
+    });
 
-  return {
-    object: result.output,
-  };
+    return {
+      object: result.output,
+    };
+  } catch (error) {
+    logger.error("defaultGenerateStructuredObject", { error });
+    throw error;
+  }
 };
 
 export const defaultOpenRouterProviderFactory: OpenRouterProviderFactory = (config) =>
@@ -77,6 +82,7 @@ export class OpenRouterProvider implements AiProvider {
       provider: this.name,
       runtimeState: this.name,
       schemaName: promptDefinition.schemaName,
+      schemaDescription: promptDefinition.schemaDescription,
     });
 
     try {

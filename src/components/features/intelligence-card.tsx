@@ -1,5 +1,4 @@
 import { Zap } from "lucide-react";
-import { EvidenceTooltip } from "@/components/features/evidence-tooltip";
 import type { IntelligenceCardRecord } from "@/components/features/intelligence-view-model";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,19 +26,16 @@ export function IntelligenceCard({ record }: IntelligenceCardProps) {
           </div>
         </div>
         <CardTitle className="text-xl leading-snug group-hover:text-primary transition-colors">
-          {record.summary.oneline}
+          {record.summary.summary}
         </CardTitle>
         <CardDescription className="flex items-center gap-1 mt-2 text-xs">
           via <span className="font-medium text-foreground">{record.sourceName}</span>
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground line-clamp-2">{record.summary.points[0]}</p>
-        <div className="flex items-center justify-between pt-2">
-          {record.evidenceSnippet && (
-            <EvidenceTooltip label="Traceable Evidence" content={record.evidenceSnippet} variant="badge" />
-          )}
-        </div>
+        <p className="text-sm text-muted-foreground line-clamp-3">
+          {record.summary.paragraphSummaries[0] ?? record.summary.summary}
+        </p>
       </CardContent>
     </Card>
   );

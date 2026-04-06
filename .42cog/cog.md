@@ -29,6 +29,7 @@
 <analysis-record>
 - 唯一编码：`content_id + model_strategy + prompt_version`
 - 常见分类：基础抽取；单篇摘要；深度分析；高价值内容；低价值内容；已缓存
+- 关键字段：`categories`（分类数组）；`keywords`（关键词数组）；`entities`（实体数组）；`language`（语种）；`value_score`（0-10 评分）；`summary.summary`（整体摘要）；`summary.paragraphSummaries`（段落摘要列表）
 </analysis-record>
 
 <digest-report>

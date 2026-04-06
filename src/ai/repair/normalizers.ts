@@ -46,27 +46,6 @@ export function normalizeStringArray(value: unknown): string[] | undefined {
   return normalized.length > 0 ? normalized : undefined;
 }
 
-export function normalizePoints(value: unknown): string[] | undefined {
-  if (Array.isArray(value)) {
-    const normalized = value.map((item) => normalizeString(item)).filter((item): item is string => item !== undefined);
-
-    return normalized.length > 0 ? normalized.slice(0, 3) : undefined;
-  }
-
-  const singleValue = normalizeString(value);
-
-  if (singleValue === undefined) {
-    return undefined;
-  }
-
-  const normalized = singleValue
-    .split(/\n+|^[-*•]\s*|[；;]+/mu)
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
-
-  return normalized.length > 0 ? normalized.slice(0, 3) : undefined;
-}
-
 export function normalizeLanguage(value: unknown): string | undefined {
   const normalized = normalizeString(value)?.toLowerCase();
 
@@ -97,32 +76,6 @@ export function normalizeLanguage(value: unknown): string | undefined {
   }
 
   return normalized;
-}
-
-export function normalizeSentiment(value: unknown): BasicAnalysis["sentiment"] | undefined {
-  const normalized = normalizeString(value)?.toLowerCase();
-
-  if (normalized === undefined) {
-    return undefined;
-  }
-
-  if (normalized === "positive" || normalized.includes("积极") || normalized.includes("正面")) {
-    return "positive";
-  }
-
-  if (normalized === "neutral" || normalized.includes("中性") || normalized.includes("客观")) {
-    return "neutral";
-  }
-
-  if (normalized === "negative" || normalized.includes("消极") || normalized.includes("负面")) {
-    return "negative";
-  }
-
-  if (normalized === "mixed" || normalized.includes("混合") || normalized.includes("复杂")) {
-    return "mixed";
-  }
-
-  return undefined;
 }
 
 export function normalizeValueScoreNumber(value: number): number | undefined {
@@ -183,7 +136,6 @@ export function normalizeBasicAnalysisCandidate(value: unknown): Partial<BasicAn
     keywords: normalizeStringArray(getFirstDefinedValue(value, ["keywords", "关键词"])),
     entities: normalizeStringArray(getFirstDefinedValue(value, ["entities", "实体"])),
     language: normalizeLanguage(getFirstDefinedValue(value, ["language", "语言"])),
-    sentiment: normalizeSentiment(getFirstDefinedValue(value, ["sentiment", "情绪"])),
     valueScore: normalizeValueScore(getFirstDefinedValue(value, ["valueScore", "价值分"])),
   };
 }
@@ -194,10 +146,10 @@ export function normalizeHeavySummaryCandidate(value: unknown): Partial<HeavySum
   }
 
   return {
-    oneline: normalizeString(getFirstDefinedValue(value, ["oneline", "一句话总结", "单行总结", "总结"])),
-    points: normalizePoints(getFirstDefinedValue(value, ["points", "要点", "关键要点", "要点列表"])),
-    reason: normalizeString(getFirstDefinedValue(value, ["reason", "关注理由", "推荐理由", "理由"])),
-    evidenceSnippet: normalizeString(getFirstDefinedValue(value, ["evidenceSnippet", "证据片段", "证据", "引用片段"])),
+    summary: normalizeString(getFirstDefinedValue(value, ["summary", "摘要", "整体摘要", "总结"])),
+    paragraphSummaries: normalizeStringArray(
+      getFirstDefinedValue(value, ["paragraphSummaries", "段落摘要", "段落总结", "分段摘要"]),
+    ),
   };
 }
 

@@ -2,9 +2,9 @@
  * AI 分析业务服务模块
  * 负责驱动内容的分层分析逻辑：
  * 1. 基础分析 (Basic Analysis): 生成分类、关键词、价值评分。
- * 2. 深度摘要 (Heavy Summary): 针对高价值内容生成详细摘要和证据片段。
+ * 2. 深度摘要 (Heavy Summary): 针对高价值内容生成详细摘要。
  *
- * 包含：AI 任务配置解析、分析记录缓存检查、结果持久化、可追溯性校验及流水线状态推进。
+ * 包含：AI 任务配置解析、分析记录缓存检查、结果持久化及流水线状态推进。
  */
 
 import { and, desc, eq } from "drizzle-orm";
@@ -24,7 +24,6 @@ import { createCompletedStepResult, createFailedStepResult, type PipelineStepRes
 import { smartFeedTaskNames } from "../queue";
 import { createLogger } from "../utils";
 import type { ContentAnalysisDebugOptions, ContentAnalyzeBasicJobData, ContentAnalyzeHeavyJobData } from "./content";
-import { canEnterDigest } from "./traceability";
 
 // 类型定义
 type AnalysisRecord = typeof analysisRecords.$inferSelect;
@@ -62,15 +61,11 @@ export type ContentAnalyzeHeavyPayload = {
   analysisRecordId: string | null;
   cached: boolean;
   contentId: string;
-  /** 是否符合进入摘要报告的标准（可追溯性校验通过） */
-  digestEligible: boolean;
-  /** 验证并规范化后的证据片段 */
-  evidenceSnippet: string | null;
   modelStrategy: string | null;
   promptVersion: string;
   runtimeState: ResolvedAiTaskConfig["runtimeState"];
-  /** 分析状态：full (完整) 或 rejected (不合规) */
-  status: "full" | "rejected" | null;
+  /** 分析状态：仅保留完整深度摘要 */
+  status: "full" | null;
 };
 
 // 依赖项定义
@@ -161,8 +156,6 @@ function buildMissingHeavyPayload(contentId: string) {
     analysisRecordId: null,
     cached: false,
     contentId,
-    digestEligible: false,
-    evidenceSnippet: null,
     modelStrategy: null,
     promptVersion: "heavy-summary-v1",
     runtimeState: "disabled" as const,
@@ -178,20 +171,6 @@ function buildContentStepFailure<TPayload extends Record<string, unknown>, TNext
     message,
     payload,
   });
-}
-
-/**
- * 规范化证据片段
- * 若 AI 返回的片段在正文中找不到，则降级取正文前 200 字。
- */
-function normalizeEvidenceSnippet(cleanedMd: string, evidenceSnippet: string): string {
-  const normalizedSnippet = evidenceSnippet.trim();
-
-  if (normalizedSnippet && cleanedMd.includes(normalizedSnippet)) {
-    return normalizedSnippet;
-  }
-
-  return cleanedMd.replace(/\s+/g, " ").trim().slice(0, 200).trim();
 }
 
 // --- 数据库操作 ---
@@ -494,13 +473,11 @@ export async function runContentAnalyzeBasic(
       contentId: record.content.id,
       contentTraceId: record.content.id,
       entities: basicAnalysis.entities,
-      evidenceSnippet: null,
       keywords: basicAnalysis.keywords,
       language: basicAnalysis.language,
       modelStrategy: taskConfig.modelStrategy,
       originalUrl: record.content.originalUrl,
       promptVersion: effectivePromptVersion,
-      sentiment: basicAnalysis.sentiment,
       sourceId: record.source.id,
       sourceName,
       sourceTraceId: record.source.id,
@@ -571,9 +548,8 @@ export async function runContentAnalyzeBasic(
  * 深度摘要任务业务逻辑 (Task 5)
  * 1. 检查缓存：同模型、同 Prompt 的深度摘要记录。
  * 2. 依赖检查：必须已存在基础分析记录。
- * 3. 调用 AI 生成一句话摘要、要点列表、理由及证据。
- * 4. 可追溯性校验 (canEnterDigest)：验证所有关键元数据是否齐全。
- * 5. 存储分析记录 (status="full" 或 "rejected")。
+ * 3. 调用 AI 生成整体摘要与段落摘要。
+ * 4. 存储分析记录 (status="full")。
  * 6. 无论成功与否，均推进内容状态至 analyzed，结束单篇文章的处理。
  */
 export async function runContentAnalyzeHeavy(
@@ -641,11 +617,10 @@ export async function runContentAnalyzeHeavy(
   );
 
   if (cachedRecord && !shouldBypassCache(jobData.debugOptions)) {
-    const cachedStatus = cachedRecord.status === "rejected" ? "rejected" : "full";
     logger.info("content.analyze.heavy cache hit", {
       analysisRecordId: cachedRecord.id,
       contentId: record.content.id,
-      status: cachedStatus,
+      status: cachedRecord.status,
     });
     await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
 
@@ -655,12 +630,10 @@ export async function runContentAnalyzeHeavy(
         analysisRecordId: cachedRecord.id,
         cached: true,
         contentId: record.content.id,
-        digestEligible: cachedStatus === "full",
-        evidenceSnippet: cachedRecord.evidenceSnippet,
         modelStrategy: cachedRecord.modelStrategy,
         promptVersion: cachedRecord.promptVersion,
         runtimeState: taskConfig.runtimeState,
-        status: cachedStatus,
+        status: "full",
       },
     });
   }
@@ -696,45 +669,29 @@ export async function runContentAnalyzeHeavy(
       title: getContentTitle(record.content),
     });
 
-    // 6. 证据校验与可追溯性判定
-    const evidenceSnippet = normalizeEvidenceSnippet(record.content.cleanedMd, heavySummary.evidenceSnippet);
-    const digestEligible = canEnterDigest({
-      contentTraceId: basicRecord.contentTraceId ?? record.content.id,
-      evidenceSnippet,
-      originalUrl: record.content.originalUrl,
-      sourceName,
-      sourceTraceId: basicRecord.sourceTraceId ?? record.source.id,
-    });
-
-    const analysisStatus = digestEligible ? "full" : "rejected";
-
     logger.info("AI heavy analysis completed", {
-      analysisStatus,
       contentId: record.content.id,
-      digestEligible,
+      paragraphCount: heavySummary.paragraphSummaries.length,
     });
 
-    // 7. 存储结果（合并前序基础分析的部分字段）
+    // 6. 存储结果（合并前序基础分析的部分字段）
     const analysisRecordData: NewAnalysisRecord = {
       categories: basicRecord.categories,
       contentId: record.content.id,
       contentTraceId: basicRecord.contentTraceId ?? record.content.id,
       entities: basicRecord.entities,
-      evidenceSnippet,
       keywords: basicRecord.keywords,
       language: basicRecord.language,
       modelStrategy: taskConfig.modelStrategy,
       originalUrl: record.content.originalUrl,
       promptVersion: effectivePromptVersion,
-      sentiment: basicRecord.sentiment,
       sourceId: record.source.id,
       sourceName,
       sourceTraceId: basicRecord.sourceTraceId ?? record.source.id,
-      status: analysisStatus,
+      status: "full",
       summary: {
-        oneline: heavySummary.oneline,
-        points: heavySummary.points,
-        reason: heavySummary.reason,
+        paragraphSummaries: heavySummary.paragraphSummaries,
+        summary: heavySummary.summary,
       },
       valueScore: basicRecord.valueScore,
     };
@@ -748,24 +705,22 @@ export async function runContentAnalyzeHeavy(
 
     logger.info("Stored heavy analysis record", {
       analysisRecordId: analysisRecord.id,
-      status: analysisStatus,
+      status: analysisRecordData.status,
     });
 
     // 推进状态至终点
     await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
 
     return createCompletedStepResult({
-      message: digestEligible ? null : "traceability incomplete; analysis marked as rejected",
+      message: null,
       payload: {
         analysisRecordId: analysisRecord.id,
         cached: false,
         contentId: record.content.id,
-        digestEligible,
-        evidenceSnippet,
         modelStrategy: taskConfig.modelStrategy,
         promptVersion: effectivePromptVersion,
         runtimeState: taskConfig.runtimeState,
-        status: analysisStatus,
+        status: "full",
       },
     });
   } catch (error) {
@@ -776,8 +731,6 @@ export async function runContentAnalyzeHeavy(
       analysisRecordId: null,
       cached: false,
       contentId: record.content.id,
-      digestEligible: false,
-      evidenceSnippet: null,
       modelStrategy: taskConfig.modelStrategy,
       promptVersion: effectivePromptVersion,
       runtimeState: taskConfig.runtimeState,

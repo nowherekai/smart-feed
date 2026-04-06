@@ -2,22 +2,18 @@ import { expect, test } from "bun:test";
 
 import { renderDigestMarkdown } from "./digest-renderer";
 
-test("renderDigestMarkdown includes traceability fields for each item", () => {
+test("renderDigestMarkdown includes summary text and source link for each item", () => {
   const markdown = renderDigestMarkdown({
     digestDate: "2026-03-31",
     sections: [
       {
         items: [
           {
-            contentTraceId: "content-123",
-            evidenceSnippet: "A traceable evidence snippet.",
             originalUrl: "https://example.com/post(1)",
             sourceName: "Example Feed",
-            sourceTraceId: "source-abc",
             summary: {
-              oneline: "One-line summary",
-              points: ["Point A", "Point B"],
-              reason: "Worth reading",
+              paragraphSummaries: ["Point A", "Point B"],
+              summary: "One-line summary",
             },
             title: "Digest Item",
           },
@@ -31,10 +27,9 @@ test("renderDigestMarkdown includes traceability fields for each item", () => {
   expect(markdown).toContain("## 技术动态");
   expect(markdown).toContain("### Digest Item");
   expect(markdown).toContain("> One-line summary");
-  expect(markdown).toContain("来源: Example Feed (`source-abc`)");
-  expect(markdown).toContain("内容追踪: `content-123`");
+  expect(markdown).toContain("- Point A");
+  expect(markdown).toContain("来源: Example Feed");
   expect(markdown).toContain("原文: [原文链接](<https://example.com/post(1)>)");
-  expect(markdown).toContain("证据: A traceable evidence snippet.");
 });
 
 test("renderDigestMarkdown renders empty digest state when no sections exist", () => {
