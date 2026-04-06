@@ -44,51 +44,32 @@ function createSingleImportResult(
   };
 }
 
-function createOpmlImportResult({
-  createdCount,
-  skippedCount,
-  failedItems,
-}: {
-  createdCount: number;
-  skippedCount: number;
-  failedItems: Array<{ inputUrl: string; errorMessage: string }>;
-}) {
-  const createdItems = Array.from({ length: createdCount }, (_, index) => ({
-    inputUrl: `https://example.com/created-${index + 1}.xml`,
-    normalizedUrl: `https://example.com/created-${index + 1}.xml`,
-    result: "created" as const,
-    sourceId: `source-created-${index + 1}`,
-    errorMessage: null,
-  }));
-  const skippedItems = Array.from({ length: skippedCount }, (_, index) => ({
-    inputUrl: `https://example.com/skipped-${index + 1}.xml`,
-    normalizedUrl: `https://example.com/skipped-${index + 1}.xml`,
-    result: "skipped_duplicate" as const,
-    sourceId: `source-skipped-${index + 1}`,
-    errorMessage: null,
-  }));
-  const failedImportItems = failedItems.map((item) => ({
-    inputUrl: item.inputUrl,
-    normalizedUrl: null,
-    result: "failed" as const,
-    sourceId: null,
-    errorMessage: item.errorMessage,
-  }));
-
-  return {
-    importRunId: "import-run-opml-1",
-    mode: "opml" as const,
-    totalCount: createdCount + skippedCount + failedItems.length,
-    createdCount,
-    skippedCount,
-    failedCount: failedItems.length,
-    status: "completed" as const,
-    items: [...createdItems, ...skippedItems, ...failedImportItems],
-  };
-}
-
 async function loadSourceActionsModule() {
   return import(`./source-actions.ts?test=${Date.now()}-${Math.random()}`);
+}
+
+function createSourceImportModuleMocks(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    enqueueOpmlSourceImport: mock(async () => ({
+      importRunId: "import-run-opml-1",
+      totalCount: 3,
+      processedCount: 0,
+      createdCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      status: "pending" as const,
+      failedItems: [],
+    })),
+    getSourceImportRunProgress: mock(async () => null),
+    runSourceImport: mock(async () =>
+      createSingleImportResult({
+        result: "created",
+        normalizedUrl: "https://example.com/feed.xml",
+        sourceId: "source-1",
+      }),
+    ),
+    ...overrides,
+  };
 }
 
 test("addSource returns created result and revalidates pages", async () => {
@@ -104,9 +85,7 @@ test("addSource returns created result and revalidates pages", async () => {
   mock.module("next/cache", () => ({
     revalidatePath,
   }));
-  mock.module("@/services/source-import", () => ({
-    runSourceImport,
-  }));
+  mock.module("@/services/source-import", () => createSourceImportModuleMocks({ runSourceImport }));
 
   const { addSource } = await loadSourceActionsModule();
   const result = await addSource("https://example.com/feed.xml");
@@ -139,9 +118,7 @@ test("addSource returns skipped_duplicate result without treating it as an error
   mock.module("next/cache", () => ({
     revalidatePath,
   }));
-  mock.module("@/services/source-import", () => ({
-    runSourceImport,
-  }));
+  mock.module("@/services/source-import", () => createSourceImportModuleMocks({ runSourceImport }));
 
   const { addSource } = await loadSourceActionsModule();
   const result = await addSource("https://example.com/feed.xml");
@@ -167,9 +144,7 @@ test("addSource returns feed validation failures without revalidating", async ()
   mock.module("next/cache", () => ({
     revalidatePath,
   }));
-  mock.module("@/services/source-import", () => ({
-    runSourceImport,
-  }));
+  mock.module("@/services/source-import", () => createSourceImportModuleMocks({ runSourceImport }));
 
   const { addSource } = await loadSourceActionsModule();
   const result = await addSource("https://example.com/feed.xml");
@@ -181,47 +156,43 @@ test("addSource returns feed validation failures without revalidating", async ()
   expect(revalidatePath).not.toHaveBeenCalled();
 });
 
-test("importSourcesFromOpml returns summarized batch result and revalidates pages", async () => {
+test("importSourcesFromOpml enqueues batch import and returns queued result", async () => {
   const revalidatePath = mock(() => {});
-  const runSourceImport = mock(async () =>
-    createOpmlImportResult({
-      createdCount: 2,
-      skippedCount: 1,
-      failedItems: [],
-    }),
-  );
+  const enqueueOpmlSourceImport = mock(async () => ({
+    importRunId: "import-run-opml-1",
+    totalCount: 3,
+    processedCount: 0,
+    createdCount: 0,
+    skippedCount: 0,
+    failedCount: 0,
+    status: "pending" as const,
+    failedItems: [],
+  }));
 
   mock.module("next/cache", () => ({
     revalidatePath,
   }));
-  mock.module("@/services/source-import", () => ({
-    runSourceImport,
-  }));
+  mock.module("@/services/source-import", () => createSourceImportModuleMocks({ enqueueOpmlSourceImport }));
 
   const { importSourcesFromOpml } = await loadSourceActionsModule();
   const result = await importSourcesFromOpml("<opml><body /></opml>");
 
-  expect(runSourceImport).toHaveBeenCalledWith({
-    mode: "opml",
-    opml: "<opml><body /></opml>",
-  });
+  expect(enqueueOpmlSourceImport).toHaveBeenCalledWith("<opml><body /></opml>");
   expect(result).toEqual({
-    status: "completed",
+    status: "queued",
     importRunId: "import-run-opml-1",
     totalCount: 3,
-    createdCount: 2,
-    skippedCount: 1,
+    createdCount: 0,
+    skippedCount: 0,
     failedCount: 0,
     failedItems: [],
   });
-  expect(revalidatePath).toHaveBeenCalledTimes(2);
-  expect(revalidatePath).toHaveBeenCalledWith("/sources");
-  expect(revalidatePath).toHaveBeenCalledWith("/");
+  expect(revalidatePath).not.toHaveBeenCalled();
 });
 
 test("importSourcesFromOpml returns failed result without revalidating when import throws", async () => {
   const revalidatePath = mock(() => {});
-  const runSourceImport = mock(async () => {
+  const enqueueOpmlSourceImport = mock(async () => {
     throw new Error("[services/source-import] OPML import failed: bad xml");
   });
   const originalConsoleError = console.error;
@@ -231,9 +202,7 @@ test("importSourcesFromOpml returns failed result without revalidating when impo
     mock.module("next/cache", () => ({
       revalidatePath,
     }));
-    mock.module("@/services/source-import", () => ({
-      runSourceImport,
-    }));
+    mock.module("@/services/source-import", () => createSourceImportModuleMocks({ enqueueOpmlSourceImport }));
 
     const { importSourcesFromOpml } = await loadSourceActionsModule();
     const result = await importSourcesFromOpml("broken");
@@ -248,39 +217,85 @@ test("importSourcesFromOpml returns failed result without revalidating when impo
   }
 });
 
-test("importSourcesFromOpml only exposes failed item details from mixed batch results", async () => {
+test("getOpmlImportRunStatus returns running progress without revalidation", async () => {
   const revalidatePath = mock(() => {});
-  const runSourceImport = mock(async () =>
-    createOpmlImportResult({
-      createdCount: 1,
-      skippedCount: 1,
-      failedItems: [
-        {
-          inputUrl: "https://example.com/bad-a.xml",
-          errorMessage: "timeout",
-        },
-        {
-          inputUrl: "https://example.com/bad-b.xml",
-          errorMessage: "invalid feed",
-        },
-      ],
-    }),
-  );
+  const getSourceImportRunProgress = mock(async () => ({
+    importRunId: "import-run-opml-1",
+    totalCount: 4,
+    processedCount: 2,
+    createdCount: 1,
+    skippedCount: 0,
+    failedCount: 1,
+    status: "running" as const,
+    failedItems: [
+      {
+        inputUrl: "https://example.com/bad-a.xml",
+        errorMessage: "timeout",
+      },
+    ],
+  }));
 
   mock.module("next/cache", () => ({
     revalidatePath,
   }));
-  mock.module("@/services/source-import", () => ({
-    runSourceImport,
+  mock.module("@/services/source-import", () => createSourceImportModuleMocks({ getSourceImportRunProgress }));
+
+  const { getOpmlImportRunStatus } = await loadSourceActionsModule();
+  const result = await getOpmlImportRunStatus("import-run-opml-1");
+
+  expect(result).toEqual({
+    status: "running",
+    importRunId: "import-run-opml-1",
+    totalCount: 4,
+    processedCount: 2,
+    createdCount: 1,
+    skippedCount: 0,
+    failedCount: 1,
+    failedItems: [
+      {
+        inputUrl: "https://example.com/bad-a.xml",
+        errorMessage: "timeout",
+      },
+    ],
+  });
+  expect(revalidatePath).not.toHaveBeenCalled();
+});
+
+test("getOpmlImportRunStatus revalidates when run completes", async () => {
+  const revalidatePath = mock(() => {});
+  const getSourceImportRunProgress = mock(async () => ({
+    importRunId: "import-run-opml-1",
+    totalCount: 4,
+    processedCount: 4,
+    createdCount: 1,
+    skippedCount: 1,
+    failedCount: 2,
+    status: "completed" as const,
+    failedItems: [
+      {
+        inputUrl: "https://example.com/bad-a.xml",
+        errorMessage: "timeout",
+      },
+      {
+        inputUrl: "https://example.com/bad-b.xml",
+        errorMessage: "invalid feed",
+      },
+    ],
   }));
 
-  const { importSourcesFromOpml } = await loadSourceActionsModule();
-  const result = await importSourcesFromOpml("<opml />");
+  mock.module("next/cache", () => ({
+    revalidatePath,
+  }));
+  mock.module("@/services/source-import", () => createSourceImportModuleMocks({ getSourceImportRunProgress }));
+
+  const { getOpmlImportRunStatus } = await loadSourceActionsModule();
+  const result = await getOpmlImportRunStatus("import-run-opml-1");
 
   expect(result).toEqual({
     status: "completed",
     importRunId: "import-run-opml-1",
     totalCount: 4,
+    processedCount: 4,
     createdCount: 1,
     skippedCount: 1,
     failedCount: 2,

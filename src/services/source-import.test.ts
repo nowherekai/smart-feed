@@ -20,6 +20,7 @@ type EnqueueSourceFetchInput = Parameters<NonNullable<SourceImportDeps["enqueueS
 
 function createImportHarness() {
   const runs: InMemoryRun[] = [];
+  const updates: Array<{ id: string; data: UpdateImportRunInput }> = [];
   const items: Array<{
     importRunId: string;
     inputUrl: string;
@@ -34,13 +35,14 @@ function createImportHarness() {
 
   return {
     runs,
+    updates,
     items,
     enqueued,
     createdSources,
     deps: {
       async createImportRun(data: CreateImportRunInput) {
         const run: InMemoryRun = {
-          id: crypto.randomUUID(),
+          id: data.id ?? crypto.randomUUID(),
           mode: data.mode,
           totalCount: data.totalCount ?? 0,
           createdCount: 0,
@@ -65,6 +67,10 @@ function createImportHarness() {
           throw new Error(`run ${id} not found`);
         }
 
+        updates.push({
+          id,
+          data,
+        });
         Object.assign(run, data);
       },
       async createImportRunItem(data: CreateImportRunItemInput) {
@@ -185,14 +191,138 @@ test("runSourceImport marks duplicate and failed items during OPML batch import"
 
   expect(result).toMatchObject({
     mode: "opml",
-    totalCount: 4,
+    totalCount: 3,
     createdCount: 2,
-    skippedCount: 1,
+    skippedCount: 0,
     failedCount: 1,
     status: "completed",
   });
-  expect(harness.items.map((item) => item.result)).toEqual(["created", "skipped_duplicate", "created", "failed"]);
+  expect(harness.items.map((item) => item.result).sort()).toEqual(["created", "created", "failed"]);
   expect(harness.enqueued).toHaveLength(2);
+});
+
+test("runSourceImport reuses existing import run id for queued OPML jobs", async () => {
+  const harness = createImportHarness();
+  harness.runs.push({
+    id: "existing-run",
+    mode: "opml",
+    totalCount: 0,
+    createdCount: 0,
+    skippedCount: 0,
+    failedCount: 0,
+    status: "pending",
+  });
+
+  const result = await runSourceImport(
+    {
+      mode: "opml",
+      opml: "<opml />",
+      importRunId: "existing-run",
+    },
+    harness.deps,
+  );
+
+  expect(result.importRunId).toBe("existing-run");
+  expect(harness.runs).toHaveLength(1);
+  expect(harness.runs[0]).toMatchObject({
+    id: "existing-run",
+    totalCount: 3,
+    status: "completed",
+  });
+  expect(harness.updates[0]).toMatchObject({
+    id: "existing-run",
+    data: {
+      createdCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      status: "running",
+    },
+  });
+  expect(harness.updates[0]?.data.totalCount).toBeUndefined();
+});
+
+test("runSourceImport treats unique constraint conflicts as skipped duplicates under concurrency", async () => {
+  const harness = createImportHarness();
+  const sources = new Map<string, { id: string; identifier: string }>();
+  let createAttempts = 0;
+  let releaseFirstCreate = () => {};
+  let notifyFirstCreateStarted = () => {};
+  const firstCreateStarted = new Promise<void>((resolve) => {
+    notifyFirstCreateStarted = resolve;
+  });
+
+  const result = await runSourceImport(
+    {
+      mode: "opml",
+      opml: "<opml />",
+    },
+    {
+      ...harness.deps,
+      parseOpml() {
+        return [
+          { text: "Upper", title: "Upper", xmlUrl: "HTTPS://EXAMPLE.COM/A.XML", htmlUrl: null },
+          { text: "Lower", title: "Lower", xmlUrl: "https://example.com/a.xml", htmlUrl: null },
+        ];
+      },
+      async verifyRssSource() {
+        return {
+          normalizedUrl: "https://example.com/a.xml",
+          title: "title:https://example.com/a.xml",
+          siteUrl: "https://site/a.xml",
+        };
+      },
+      async findSourceByIdentifier(identifier: string) {
+        return sources.get(identifier) ?? null;
+      },
+      async createSource(data: CreateSourceInput) {
+        createAttempts += 1;
+
+        if (createAttempts === 1) {
+          notifyFirstCreateStarted();
+          await new Promise<void>((resolve) => {
+            releaseFirstCreate = () => {
+              sources.set(data.identifier, {
+                id: "source-a",
+                identifier: data.identifier,
+              });
+              resolve();
+            };
+          });
+        } else {
+          await firstCreateStarted;
+          releaseFirstCreate();
+          throw {
+            code: "23505",
+          };
+        }
+
+        return {
+          id: "source-a",
+          type: "rss-source" as const,
+          identifier: data.identifier,
+          title: data.title ?? null,
+          siteUrl: data.siteUrl ?? null,
+          status: "active" as const,
+          weight: 1,
+          syncCursor: null,
+          firstImportedAt: new Date(),
+          lastPolledAt: null,
+          lastSuccessfulSyncAt: null,
+          lastErrorAt: null,
+          lastErrorMessage: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      },
+    },
+  );
+
+  expect(result).toMatchObject({
+    totalCount: 2,
+    createdCount: 1,
+    skippedCount: 1,
+    failedCount: 0,
+  });
 });
 
 test("runSourceImport marks OPML run as failed when parsing throws", async () => {

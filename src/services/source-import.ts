@@ -4,10 +4,10 @@
  * 包含：创建导入运行记录、URL 验证、去重检查、来源创建以及触发首次抓取任务。
  */
 
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { getDb, sourceImportRunItems, sourceImportRuns } from "../db";
 import { type ParsedOpmlSource, parseOpml } from "../parsers";
-import { buildSourceFetchDeduplicationId, getQueueForTask, smartFeedTaskNames } from "../queue";
+import { buildSourceFetchDeduplicationId, getLegacyImportQueue, getQueueForTask, smartFeedTaskNames } from "../queue";
 import { createLogger, sanitizeUrlForLogging } from "../utils";
 import type { SourceFetchJobData } from "./content";
 import {
@@ -27,6 +27,7 @@ type SourceReference = Pick<SourceRecord, "id">;
 type SourceImportRunReference = Pick<SourceImportRunRecord, "id">;
 type SourceImportRunItemReference = Pick<SourceImportRunItemRecord, "id">;
 const logger = createLogger("SourceImportService");
+const OPML_IMPORT_CONCURRENCY = 5;
 
 /** 来源导入任务输入数据 */
 export type SourceImportJobData =
@@ -35,6 +36,7 @@ export type SourceImportJobData =
       url: string;
     }
   | {
+      importRunId?: string;
       mode: "opml";
       opml: string;
     };
@@ -63,6 +65,22 @@ export type SourceImportSummary = {
   failedCount: number;
   status: "completed" | "failed";
   items: SourceImportItemOutcome[];
+};
+
+export type SourceImportRunStatus = "pending" | "running" | "completed" | "failed";
+
+export type SourceImportRunProgress = {
+  createdCount: number;
+  failedCount: number;
+  failedItems: Array<{
+    errorMessage: string;
+    inputUrl: string;
+  }>;
+  importRunId: string;
+  processedCount: number;
+  skippedCount: number;
+  status: SourceImportRunStatus;
+  totalCount: number;
 };
 
 /** 依赖项接口，支持 Mock */
@@ -122,6 +140,36 @@ async function enqueueSourceFetch(data: SourceFetchJobData): Promise<void> {
   });
 }
 
+function extractOpmlUrls(parsedSources: ParsedOpmlSource[]): string[] {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+
+  for (const source of parsedSources) {
+    const trimmedUrl = source.xmlUrl.trim();
+
+    if (!trimmedUrl || seen.has(trimmedUrl)) {
+      continue;
+    }
+
+    seen.add(trimmedUrl);
+    urls.push(trimmedUrl);
+  }
+
+  return urls;
+}
+
+async function enqueueSourceImport(data: SourceImportJobData): Promise<void> {
+  const queue = getLegacyImportQueue<SourceImportJobData, SourceImportSummary>();
+  const queueJobId =
+    data.mode === "opml" && data.importRunId
+      ? `source-import:${data.importRunId}`
+      : `source-import:${crypto.randomUUID()}`;
+
+  await queue.add(smartFeedTaskNames.sourceImport, data, {
+    jobId: queueJobId,
+  });
+}
+
 /** 格式化错误消息 */
 function toFailureMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
@@ -153,6 +201,96 @@ function summarizeOutcomes(outcomes: SourceImportItemOutcome[]) {
   );
 }
 
+function isUniqueConstraintError(error: unknown): error is { code: string } {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
+}
+
+async function createSourceWithDeduplicationFallback(
+  preparedSource: PreparedRssSource,
+  deps: Required<SourceImportDeps>,
+): Promise<
+  | {
+      result: "created";
+      source: SourceReference;
+    }
+  | {
+      result: "skipped_duplicate";
+      source: SourceReference;
+    }
+> {
+  const existingSource = await deps.findSourceByIdentifier(preparedSource.normalizedUrl);
+
+  if (existingSource) {
+    return {
+      result: "skipped_duplicate",
+      source: existingSource,
+    };
+  }
+
+  try {
+    const createdSource = await deps.createSource({
+      type: "rss-source",
+      identifier: preparedSource.normalizedUrl,
+      title: preparedSource.title,
+      siteUrl: preparedSource.siteUrl,
+      status: "active",
+      weight: 1,
+      firstImportedAt: new Date(),
+    });
+
+    return {
+      result: "created",
+      source: createdSource,
+    };
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) {
+      throw error;
+    }
+
+    const existingSourceAfterConflict = await deps.findSourceByIdentifier(preparedSource.normalizedUrl);
+
+    if (!existingSourceAfterConflict) {
+      throw error;
+    }
+
+    logger.info("Source creation hit unique constraint and was treated as duplicate", {
+      normalizedUrl: sanitizeUrlForLogging(preparedSource.normalizedUrl),
+      sourceId: existingSourceAfterConflict.id,
+    });
+
+    return {
+      result: "skipped_duplicate",
+      source: existingSourceAfterConflict,
+    };
+  }
+}
+
+async function mapWithConcurrencyLimit<TItem, TResult>(
+  items: TItem[],
+  concurrency: number,
+  iteratee: (item: TItem, index: number) => Promise<TResult>,
+): Promise<TResult[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results = new Array<TResult>(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await iteratee(items[currentIndex] as TItem, currentIndex);
+    }
+  }
+
+  const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  return results;
+}
+
 /**
  * 处理单条 URL 导入的业务逻辑
  * 1. 验证 RSS URL。
@@ -176,51 +314,41 @@ async function processSingleUrl(
       title: preparedSource.title,
     });
 
-    const existingSource = await deps.findSourceByIdentifier(preparedSource.normalizedUrl);
+    const sourceCreation = await createSourceWithDeduplicationFallback(preparedSource, deps);
 
-    if (existingSource) {
+    if (sourceCreation.result === "skipped_duplicate") {
       logger.info("Source already exists, skipping creation", {
         normalizedUrl: safeNormalizedUrlToLog,
-        sourceId: existingSource.id,
+        sourceId: sourceCreation.source.id,
       });
       return {
         inputUrl,
         normalizedUrl: preparedSource.normalizedUrl,
         result: "skipped_duplicate",
-        sourceId: existingSource.id,
+        sourceId: sourceCreation.source.id,
         errorMessage: null,
       };
     }
 
-    const createdSource = await deps.createSource({
-      type: "rss-source",
-      identifier: preparedSource.normalizedUrl,
-      title: preparedSource.title,
-      siteUrl: preparedSource.siteUrl,
-      status: "active",
-      weight: 1,
-      firstImportedAt: new Date(),
-    });
-
     logger.info("Source created successfully", {
-      sourceId: createdSource.id,
+      sourceId: sourceCreation.source.id,
       identifier: safeNormalizedUrlToLog,
     });
 
     // 成功创建后，立即触发首次抓取
     await deps.enqueueSourceFetch({
-      sourceId: createdSource.id,
+      sourceId: sourceCreation.source.id,
       importRunId,
       trigger: "source.import",
     });
 
-    logger.info("Initial source fetch task enqueued", { sourceId: createdSource.id });
+    logger.info("Initial source fetch task enqueued", { sourceId: sourceCreation.source.id });
 
     return {
       inputUrl,
       normalizedUrl: preparedSource.normalizedUrl,
       result: "created",
-      sourceId: createdSource.id,
+      sourceId: sourceCreation.source.id,
       errorMessage: null,
     };
   } catch (error) {
@@ -294,6 +422,116 @@ async function finalizeRun(
   };
 }
 
+async function getImportRun(runId: string): Promise<SourceImportRunRecord | null> {
+  const db = getDb();
+  const [run] = await db.select().from(sourceImportRuns).where(eq(sourceImportRuns.id, runId));
+
+  return run ?? null;
+}
+
+async function listImportRunItems(importRunId: string): Promise<SourceImportRunItemRecord[]> {
+  const db = getDb();
+  return db
+    .select()
+    .from(sourceImportRunItems)
+    .where(eq(sourceImportRunItems.importRunId, importRunId))
+    .orderBy(asc(sourceImportRunItems.createdAt), asc(sourceImportRunItems.id));
+}
+
+function toProgressSummary(
+  run: Pick<SourceImportRunRecord, "id" | "status" | "totalCount" | "createdCount" | "skippedCount" | "failedCount">,
+  items: SourceImportRunItemRecord[],
+): SourceImportRunProgress {
+  const persistedCounts = summarizeOutcomes(
+    items.map((item) => ({
+      inputUrl: item.inputUrl,
+      normalizedUrl: item.normalizedUrl,
+      result: item.result,
+      sourceId: item.sourceId,
+      errorMessage: item.errorMessage,
+    })),
+  );
+  const counts =
+    run.status === "pending" || run.status === "running"
+      ? persistedCounts
+      : {
+          createdCount: run.createdCount,
+          skippedCount: run.skippedCount,
+          failedCount: run.failedCount,
+        };
+
+  return {
+    importRunId: run.id,
+    totalCount: run.totalCount,
+    processedCount: items.length,
+    createdCount: counts.createdCount,
+    skippedCount: counts.skippedCount,
+    failedCount: counts.failedCount,
+    status: run.status,
+    failedItems: items
+      .filter((item) => item.result === "failed" && item.errorMessage)
+      .map((item) => ({
+        inputUrl: item.inputUrl,
+        errorMessage: item.errorMessage ?? "Unknown import error.",
+      })),
+  };
+}
+
+export async function enqueueOpmlSourceImport(opml: string): Promise<SourceImportRunProgress> {
+  const parsedSources = parseOpml(opml);
+  const urls = extractOpmlUrls(parsedSources);
+  const run = await createImportRun({
+    mode: "opml",
+    totalCount: urls.length,
+    status: "pending",
+  });
+
+  try {
+    await enqueueSourceImport({
+      mode: "opml",
+      opml,
+      importRunId: run.id,
+    });
+  } catch (error) {
+    const errorMessage = toFailureMessage(error);
+
+    logger.error("Failed to enqueue OPML import job", {
+      importRunId: run.id,
+      error: errorMessage,
+    });
+
+    await updateImportRun(run.id, {
+      failedCount: 1,
+      finishedAt: new Date(),
+      status: "failed",
+    });
+
+    throw error;
+  }
+
+  return {
+    importRunId: run.id,
+    totalCount: urls.length,
+    processedCount: 0,
+    createdCount: 0,
+    skippedCount: 0,
+    failedCount: 0,
+    status: "pending",
+    failedItems: [],
+  };
+}
+
+export async function getSourceImportRunProgress(importRunId: string): Promise<SourceImportRunProgress | null> {
+  const run = await getImportRun(importRunId);
+
+  if (!run) {
+    return null;
+  }
+
+  const items = await listImportRunItems(importRunId);
+  return toProgressSummary(run, items);
+}
+
 /**
  * 核心导入业务入口
  * 支持 single (单条 URL) 和 opml (批量文件) 模式。
@@ -335,45 +573,59 @@ export async function runSourceImport(
   }
 
   // 模式 2: OPML 批量导入
-  const run = await deps.createImportRun({
-    mode: "opml",
-    totalCount: 0,
-    status: "running",
-    startedAt,
-  });
+  const runId = input.importRunId ?? crypto.randomUUID();
+
+  if (input.importRunId) {
+    await deps.updateImportRun(runId, {
+      createdCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      finishedAt: null,
+      startedAt,
+      status: "running",
+    });
+  } else {
+    await deps.createImportRun({
+      id: runId,
+      mode: "opml",
+      totalCount: 0,
+      status: "running",
+      startedAt,
+    });
+  }
 
   try {
     const parsedSources = deps.parseOpml(input.opml);
-    const urls = parsedSources.map((source) => source.xmlUrl);
+    const urls = extractOpmlUrls(parsedSources);
 
     logger.info("OPML parsed", {
-      importRunId: run.id,
+      importRunId: runId,
       urlCount: urls.length,
     });
 
-    await deps.updateImportRun(run.id, {
+    await deps.updateImportRun(runId, {
       totalCount: urls.length,
     });
 
-    const outcomes: SourceImportItemOutcome[] = [];
+    const outcomes = await mapWithConcurrencyLimit(urls, OPML_IMPORT_CONCURRENCY, async (url, index) => {
+      logger.info(`Importing OPML item ${index + 1}/${urls.length}`, {
+        url: sanitizeUrlForLogging(url),
+        importRunId: runId,
+      });
+      const outcome = await processSingleUrl(runId, url, deps);
+      await persistOutcome(runId, outcome, deps);
+      return outcome;
+    });
 
-    // 串行执行每一条 URL 的导入
-    for (const [index, url] of urls.entries()) {
-      logger.info(`Importing OPML item ${index + 1}/${urls.length}`, { url: sanitizeUrlForLogging(url) });
-      const outcome = await processSingleUrl(run.id, url, deps);
-      outcomes.push(outcome);
-      await persistOutcome(run.id, outcome, deps);
-    }
-
-    const counts = await finalizeRun(run.id, outcomes, deps);
+    const counts = await finalizeRun(runId, outcomes, deps);
 
     logger.info("OPML import completed", {
-      importRunId: run.id,
+      importRunId: runId,
       ...counts,
     });
 
     return {
-      importRunId: run.id,
+      importRunId: runId,
       mode: "opml",
       totalCount: urls.length,
       items: outcomes,
@@ -383,11 +635,11 @@ export async function runSourceImport(
     const errorMessage = toFailureMessage(error);
 
     logger.error("OPML import failed", {
-      importRunId: run.id,
+      importRunId: runId,
       error: errorMessage,
     });
 
-    await deps.updateImportRun(run.id, {
+    await deps.updateImportRun(runId, {
       failedCount: 1,
       status: "failed",
       finishedAt: new Date(),

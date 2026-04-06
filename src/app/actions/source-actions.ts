@@ -4,7 +4,12 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { type Source, sources } from "@/db/schema";
-import { runSourceImport } from "@/services/source-import";
+import {
+  enqueueOpmlSourceImport,
+  getSourceImportRunProgress,
+  runSourceImport,
+  type SourceImportRunProgress,
+} from "@/services/source-import";
 
 export type AddSourceResult =
   | {
@@ -31,6 +36,15 @@ export type OpmlImportFailedItem = {
 
 export type ImportSourcesFromOpmlResult =
   | {
+      status: "queued";
+      importRunId: string;
+      totalCount: number;
+      createdCount: number;
+      skippedCount: number;
+      failedCount: number;
+      failedItems: OpmlImportFailedItem[];
+    }
+  | {
       status: "completed";
       importRunId: string;
       totalCount: number;
@@ -41,6 +55,33 @@ export type ImportSourcesFromOpmlResult =
     }
   | {
       status: "failed";
+      message: string;
+    };
+
+export type SourceImportRunStatusResult =
+  | {
+      status: "pending" | "running" | "completed";
+      importRunId: string;
+      totalCount: number;
+      processedCount: number;
+      createdCount: number;
+      skippedCount: number;
+      failedCount: number;
+      failedItems: OpmlImportFailedItem[];
+    }
+  | {
+      status: "failed";
+      importRunId: string;
+      totalCount: number;
+      processedCount: number;
+      createdCount: number;
+      skippedCount: number;
+      failedCount: number;
+      failedItems: OpmlImportFailedItem[];
+      message: string;
+    }
+  | {
+      status: "not_found";
       message: string;
     };
 
@@ -57,6 +98,18 @@ function toFailureMessage(error: unknown): string {
   }
 
   return "Failed to add source.";
+}
+
+function toOpmlRunSummary(progress: SourceImportRunProgress) {
+  return {
+    importRunId: progress.importRunId,
+    totalCount: progress.totalCount,
+    processedCount: progress.processedCount,
+    createdCount: progress.createdCount,
+    skippedCount: progress.skippedCount,
+    failedCount: progress.failedCount,
+    failedItems: progress.failedItems,
+  };
 }
 
 export async function addSource(url: string): Promise<AddSourceResult> {
@@ -118,33 +171,66 @@ export async function importSourcesFromOpml(opmlText: string): Promise<ImportSou
   }
 
   try {
-    const result = await runSourceImport({
-      mode: "opml",
-      opml: normalizedOpmlText,
-    });
-
-    revalidatePath("/sources");
-    revalidatePath("/");
+    const result = await enqueueOpmlSourceImport(normalizedOpmlText);
 
     return {
-      status: "completed",
+      status: "queued",
       importRunId: result.importRunId,
       totalCount: result.totalCount,
-      createdCount: result.createdCount,
-      skippedCount: result.skippedCount,
-      failedCount: result.failedCount,
-      failedItems: result.items
-        .filter((item) => item.result === "failed")
-        .map((item) => ({
-          inputUrl: item.inputUrl,
-          errorMessage: item.errorMessage ?? "Unknown import error.",
-        })),
+      createdCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      failedItems: [],
     };
   } catch (error) {
     console.error("Failed to import OPML", error);
 
     return {
       status: "failed",
+      message: toFailureMessage(error),
+    };
+  }
+}
+
+export async function getOpmlImportRunStatus(importRunId: string): Promise<SourceImportRunStatusResult> {
+  try {
+    const progress = await getSourceImportRunProgress(importRunId);
+
+    if (!progress) {
+      return {
+        status: "not_found",
+        message: "导入运行不存在。",
+      };
+    }
+
+    if (progress.status === "completed") {
+      revalidatePath("/sources");
+      revalidatePath("/");
+      return {
+        status: "completed",
+        ...toOpmlRunSummary(progress),
+      };
+    }
+
+    if (progress.status === "failed") {
+      revalidatePath("/sources");
+      revalidatePath("/");
+      return {
+        status: "failed",
+        ...toOpmlRunSummary(progress),
+        message: "OPML 导入失败，请查看服务端日志。",
+      };
+    }
+
+    return {
+      status: progress.status,
+      ...toOpmlRunSummary(progress),
+    };
+  } catch (error) {
+    console.error("Failed to query OPML import run", error);
+
+    return {
+      status: "not_found",
       message: toFailureMessage(error),
     };
   }
