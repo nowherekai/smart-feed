@@ -20,16 +20,26 @@ import {
 import { type AppEnv, getAppEnv } from "../config";
 import { analysisRecords, contentItems, getDb, sources } from "../db";
 import { normalizeDebugVariantTag } from "../lib/debug-run";
-import { createCompletedStepResult, createFailedStepResult, type PipelineStepResult } from "../pipeline/types";
+import {
+  createCompletedStepResult,
+  createFailedStepResult,
+  type PipelineStepResult,
+} from "../pipeline/types";
 import { smartFeedTaskNames } from "../queue";
 import { createLogger } from "../utils";
-import type { ContentAnalysisDebugOptions, ContentAnalyzeBasicJobData, ContentAnalyzeHeavyJobData } from "./content";
+import type {
+  ContentAnalysisDebugOptions,
+  ContentAnalyzeBasicJobData,
+  ContentAnalyzeHeavyJobData,
+} from "./content";
 
 // 类型定义
 type AnalysisRecord = typeof analysisRecords.$inferSelect;
 type NewAnalysisRecord = typeof analysisRecords.$inferInsert;
 type ContentItemRecord = typeof contentItems.$inferSelect;
-type ContentItemUpdate = Partial<Omit<typeof contentItems.$inferInsert, "id" | "sourceId">>;
+type ContentItemUpdate = Partial<
+  Omit<typeof contentItems.$inferInsert, "id" | "sourceId">
+>;
 type SourceRecord = typeof sources.$inferSelect;
 
 type ContentForAnalysis = {
@@ -77,7 +87,9 @@ export type ContentAnalyzeBasicDeps = {
     modelStrategy: string,
     promptVersion: string,
   ) => Promise<AnalysisRecord | null>;
-  getContentForAnalysisById?: (contentId: string) => Promise<ContentForAnalysis | null>;
+  getContentForAnalysisById?: (
+    contentId: string,
+  ) => Promise<ContentForAnalysis | null>;
   resolveBasicTaskConfig?: () => ResolvedAiTaskConfig;
   runBasicAnalysis?: (input: {
     cleanedMd: string;
@@ -85,8 +97,14 @@ export type ContentAnalyzeBasicDeps = {
     sourceName: string;
     title: string;
   }) => Promise<BasicAnalysis>;
-  updateAnalysisRecord?: (id: string, data: Partial<Omit<NewAnalysisRecord, "id">>) => Promise<AnalysisRecord>;
-  updateContentItem?: (contentId: string, data: ContentItemUpdate) => Promise<void>;
+  updateAnalysisRecord?: (
+    id: string,
+    data: Partial<Omit<NewAnalysisRecord, "id">>,
+  ) => Promise<AnalysisRecord>;
+  updateContentItem?: (
+    contentId: string,
+    data: ContentItemUpdate,
+  ) => Promise<void>;
 };
 
 export type ContentAnalyzeHeavyDeps = {
@@ -96,8 +114,12 @@ export type ContentAnalyzeHeavyDeps = {
     modelStrategy: string,
     promptVersion: string,
   ) => Promise<AnalysisRecord | null>;
-  findLatestBasicAnalysisRecordByContentId?: (contentId: string) => Promise<AnalysisRecord | null>;
-  getContentForAnalysisById?: (contentId: string) => Promise<ContentForAnalysis | null>;
+  findLatestBasicAnalysisRecordByContentId?: (
+    contentId: string,
+  ) => Promise<AnalysisRecord | null>;
+  getContentForAnalysisById?: (
+    contentId: string,
+  ) => Promise<ContentForAnalysis | null>;
   resolveHeavyTaskConfig?: () => ResolvedAiTaskConfig;
   runHeavySummary?: (input: {
     cleanedMd: string;
@@ -105,8 +127,14 @@ export type ContentAnalyzeHeavyDeps = {
     sourceName: string;
     title: string;
   }) => Promise<HeavySummary>;
-  updateAnalysisRecord?: (id: string, data: Partial<Omit<NewAnalysisRecord, "id">>) => Promise<AnalysisRecord>;
-  updateContentItem?: (contentId: string, data: ContentItemUpdate) => Promise<void>;
+  updateAnalysisRecord?: (
+    id: string,
+    data: Partial<Omit<NewAnalysisRecord, "id">>,
+  ) => Promise<AnalysisRecord>;
+  updateContentItem?: (
+    contentId: string,
+    data: ContentItemUpdate,
+  ) => Promise<void>;
 };
 
 // --- 辅助函数 ---
@@ -163,10 +191,10 @@ function buildMissingHeavyPayload(contentId: string) {
   };
 }
 
-function buildContentStepFailure<TPayload extends Record<string, unknown>, TNextData extends Record<string, unknown>>(
-  message: string,
-  payload: TPayload,
-): PipelineStepResult<TPayload, TNextData> {
+function buildContentStepFailure<
+  TPayload extends Record<string, unknown>,
+  TNextData extends Record<string, unknown>,
+>(message: string, payload: TPayload): PipelineStepResult<TPayload, TNextData> {
   return createFailedStepResult<TPayload, TNextData>({
     message,
     payload,
@@ -175,7 +203,9 @@ function buildContentStepFailure<TPayload extends Record<string, unknown>, TNext
 
 // --- 数据库操作 ---
 
-async function getContentForAnalysisById(contentId: string): Promise<ContentForAnalysis | null> {
+async function getContentForAnalysisById(
+  contentId: string,
+): Promise<ContentForAnalysis | null> {
   const db = getDb();
   const [result] = await db
     .select({
@@ -209,32 +239,51 @@ async function findAnalysisRecord(
   return record ?? null;
 }
 
-async function findLatestBasicAnalysisRecordByContentId(contentId: string): Promise<AnalysisRecord | null> {
+async function findLatestBasicAnalysisRecordByContentId(
+  contentId: string,
+): Promise<AnalysisRecord | null> {
   const db = getDb();
   const [record] = await db
     .select()
     .from(analysisRecords)
-    .where(and(eq(analysisRecords.contentId, contentId), eq(analysisRecords.status, "basic")))
+    .where(
+      and(
+        eq(analysisRecords.contentId, contentId),
+        eq(analysisRecords.status, "basic"),
+      ),
+    )
     .orderBy(desc(analysisRecords.createdAt));
 
   return record ?? null;
 }
 
-async function createAnalysisRecord(data: NewAnalysisRecord): Promise<AnalysisRecord> {
+async function createAnalysisRecord(
+  data: NewAnalysisRecord,
+): Promise<AnalysisRecord> {
   const db = getDb();
   const [record] = await db.insert(analysisRecords).values(data).returning();
 
   return requireInsertedRow(record, "analysis record");
 }
 
-async function updateAnalysisRecord(id: string, data: Partial<Omit<NewAnalysisRecord, "id">>): Promise<AnalysisRecord> {
+async function updateAnalysisRecord(
+  id: string,
+  data: Partial<Omit<NewAnalysisRecord, "id">>,
+): Promise<AnalysisRecord> {
   const db = getDb();
-  const [record] = await db.update(analysisRecords).set(data).where(eq(analysisRecords.id, id)).returning();
+  const [record] = await db
+    .update(analysisRecords)
+    .set(data)
+    .where(eq(analysisRecords.id, id))
+    .returning();
 
   return requireInsertedRow(record, "analysis record");
 }
 
-async function updateContentItem(contentId: string, data: ContentItemUpdate): Promise<void> {
+async function updateContentItem(
+  contentId: string,
+  data: ContentItemUpdate,
+): Promise<void> {
   if (Object.keys(data).length === 0) {
     return;
   }
@@ -245,34 +294,50 @@ async function updateContentItem(contentId: string, data: ContentItemUpdate): Pr
 
 // --- 依赖构建 ---
 
-function buildBasicDeps(overrides: ContentAnalyzeBasicDeps): Required<ContentAnalyzeBasicDeps> {
+function buildBasicDeps(
+  overrides: ContentAnalyzeBasicDeps,
+): Required<ContentAnalyzeBasicDeps> {
   return {
     appEnv: overrides.appEnv ?? getAppEnv(),
-    createAnalysisRecord: overrides.createAnalysisRecord ?? createAnalysisRecord,
+    createAnalysisRecord:
+      overrides.createAnalysisRecord ?? createAnalysisRecord,
     findAnalysisRecord: overrides.findAnalysisRecord ?? findAnalysisRecord,
-    getContentForAnalysisById: overrides.getContentForAnalysisById ?? getContentForAnalysisById,
-    resolveBasicTaskConfig: overrides.resolveBasicTaskConfig ?? (() => resolveAiTaskConfig("basic")),
+    getContentForAnalysisById:
+      overrides.getContentForAnalysisById ?? getContentForAnalysisById,
+    resolveBasicTaskConfig:
+      overrides.resolveBasicTaskConfig ?? (() => resolveAiTaskConfig("basic")),
     runBasicAnalysis: overrides.runBasicAnalysis ?? runBasicAnalysis,
-    updateAnalysisRecord: overrides.updateAnalysisRecord ?? updateAnalysisRecord,
+    updateAnalysisRecord:
+      overrides.updateAnalysisRecord ?? updateAnalysisRecord,
     updateContentItem: overrides.updateContentItem ?? updateContentItem,
   };
 }
 
-function buildHeavyDeps(overrides: ContentAnalyzeHeavyDeps): Required<ContentAnalyzeHeavyDeps> {
+function buildHeavyDeps(
+  overrides: ContentAnalyzeHeavyDeps,
+): Required<ContentAnalyzeHeavyDeps> {
   return {
-    createAnalysisRecord: overrides.createAnalysisRecord ?? createAnalysisRecord,
+    createAnalysisRecord:
+      overrides.createAnalysisRecord ?? createAnalysisRecord,
     findAnalysisRecord: overrides.findAnalysisRecord ?? findAnalysisRecord,
     findLatestBasicAnalysisRecordByContentId:
-      overrides.findLatestBasicAnalysisRecordByContentId ?? findLatestBasicAnalysisRecordByContentId,
-    getContentForAnalysisById: overrides.getContentForAnalysisById ?? getContentForAnalysisById,
-    resolveHeavyTaskConfig: overrides.resolveHeavyTaskConfig ?? (() => resolveAiTaskConfig("heavy")),
+      overrides.findLatestBasicAnalysisRecordByContentId ??
+      findLatestBasicAnalysisRecordByContentId,
+    getContentForAnalysisById:
+      overrides.getContentForAnalysisById ?? getContentForAnalysisById,
+    resolveHeavyTaskConfig:
+      overrides.resolveHeavyTaskConfig ?? (() => resolveAiTaskConfig("heavy")),
     runHeavySummary: overrides.runHeavySummary ?? runHeavySummary,
-    updateAnalysisRecord: overrides.updateAnalysisRecord ?? updateAnalysisRecord,
+    updateAnalysisRecord:
+      overrides.updateAnalysisRecord ?? updateAnalysisRecord,
     updateContentItem: overrides.updateContentItem ?? updateContentItem,
   };
 }
 
-function buildEffectivePromptVersion(promptVersion: string, debugOptions?: ContentAnalysisDebugOptions): string {
+function buildEffectivePromptVersion(
+  promptVersion: string,
+  debugOptions?: ContentAnalysisDebugOptions,
+): string {
   if (!debugOptions) {
     return promptVersion;
   }
@@ -298,11 +363,19 @@ function buildEffectivePromptVersion(promptVersion: string, debugOptions?: Conte
   return `${promptVersion}~${suffix.slice(0, maxSuffixLength)}`;
 }
 
-function shouldBypassCache(debugOptions?: ContentAnalysisDebugOptions): boolean {
-  return debugOptions?.recordMode === "new-record" || debugOptions?.recordMode === "overwrite";
+function shouldBypassCache(
+  debugOptions?: ContentAnalysisDebugOptions,
+): boolean {
+  return (
+    debugOptions?.recordMode === "new-record" ||
+    debugOptions?.recordMode === "overwrite"
+  );
 }
 
-function buildHeavyJobData(contentId: string, debugOptions?: ContentAnalysisDebugOptions): ContentAnalyzeHeavyJobData {
+function buildHeavyJobData(
+  contentId: string,
+  debugOptions?: ContentAnalysisDebugOptions,
+): ContentAnalyzeHeavyJobData {
   return debugOptions
     ? {
         contentId,
@@ -315,7 +388,10 @@ function buildHeavyJobData(contentId: string, debugOptions?: ContentAnalysisDebu
       };
 }
 
-function shouldContinueToHeavy(thresholdExceeded: boolean, debugOptions?: ContentAnalysisDebugOptions): boolean {
+function shouldContinueToHeavy(
+  thresholdExceeded: boolean,
+  debugOptions?: ContentAnalysisDebugOptions,
+): boolean {
   if (!thresholdExceeded) {
     return false;
   }
@@ -339,7 +415,9 @@ function shouldContinueToHeavy(thresholdExceeded: boolean, debugOptions?: Conten
 export async function runContentAnalyzeBasic(
   jobData: ContentAnalyzeBasicJobData,
   overrides: ContentAnalyzeBasicDeps = {},
-): Promise<PipelineStepResult<ContentAnalyzeBasicPayload, ContentAnalyzeHeavyJobData>> {
+): Promise<
+  PipelineStepResult<ContentAnalyzeBasicPayload, ContentAnalyzeHeavyJobData>
+> {
   logger.info("runContentAnalyzeBasic started", {
     contentId: jobData.contentId,
     pipelineRunId: jobData.pipelineRunId,
@@ -353,12 +431,17 @@ export async function runContentAnalyzeBasic(
   if (!record) {
     const message = `[services/analysis] Content "${jobData.contentId}" not found.`;
     logger.error("Content not found", { contentId: jobData.contentId });
-    return buildContentStepFailure(message, buildMissingContentPayload(jobData.contentId));
+    return buildContentStepFailure(
+      message,
+      buildMissingContentPayload(jobData.contentId),
+    );
   }
 
   if (!record.content.cleanedMd?.trim()) {
     const message = `[services/analysis] Content "${record.content.id}" has no cleaned markdown for analysis.`;
-    logger.warn("Content has no cleaned markdown for analysis", { contentId: record.content.id });
+    logger.warn("Content has no cleaned markdown for analysis", {
+      contentId: record.content.id,
+    });
 
     await deps.updateContentItem(record.content.id, {
       processingError: message,
@@ -377,18 +460,34 @@ export async function runContentAnalyzeBasic(
     taskConfig = deps.resolveBasicTaskConfig();
   } catch (error) {
     const message = toErrorMessage(error);
-    logger.error("Failed to resolve basic task config", { error: message, contentId: record.content.id });
-    await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
+    logger.error("Failed to resolve basic task config", {
+      error: message,
+      contentId: record.content.id,
+    });
+    await deps.updateContentItem(record.content.id, {
+      processingError: message,
+      status: "failed",
+    });
     return buildContentStepFailure(message, {
       ...buildMissingContentPayload(record.content.id),
       runtimeState: "openrouter",
     });
   }
 
-  if (taskConfig.runtimeState === "disabled" || taskConfig.modelStrategy === null) {
-    const message = "[services/analysis] AI provider is not configured for content.analyze.basic.";
-    logger.warn(message, { contentId: record.content.id, runtimeState: taskConfig.runtimeState });
-    await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
+  if (
+    taskConfig.runtimeState === "disabled" ||
+    taskConfig.modelStrategy === null
+  ) {
+    const message =
+      "[services/analysis] AI provider is not configured for content.analyze.basic.";
+    logger.warn(message, {
+      contentId: record.content.id,
+      runtimeState: taskConfig.runtimeState,
+    });
+    await deps.updateContentItem(record.content.id, {
+      processingError: message,
+      status: "failed",
+    });
     return buildContentStepFailure(message, {
       ...buildMissingContentPayload(record.content.id),
       promptVersion: taskConfig.promptVersion,
@@ -396,7 +495,10 @@ export async function runContentAnalyzeBasic(
     });
   }
 
-  const effectivePromptVersion = buildEffectivePromptVersion(taskConfig.promptVersion, jobData.debugOptions);
+  const effectivePromptVersion = buildEffectivePromptVersion(
+    taskConfig.promptVersion,
+    jobData.debugOptions,
+  );
 
   // 3. 缓存检查
   const cachedRecord = await deps.findAnalysisRecord(
@@ -406,8 +508,12 @@ export async function runContentAnalyzeBasic(
   );
 
   if (cachedRecord && !shouldBypassCache(jobData.debugOptions)) {
-    const thresholdExceeded = cachedRecord.valueScore > deps.appEnv.valueScoreThreshold;
-    const shouldQueueHeavy = shouldContinueToHeavy(thresholdExceeded, jobData.debugOptions);
+    const thresholdExceeded =
+      cachedRecord.valueScore > deps.appEnv.valueScoreThreshold;
+    const shouldQueueHeavy = shouldContinueToHeavy(
+      thresholdExceeded,
+      jobData.debugOptions,
+    );
 
     logger.info("content.analyze.basic cache hit", {
       analysisRecordId: cachedRecord.id,
@@ -418,12 +524,20 @@ export async function runContentAnalyzeBasic(
     });
 
     if (!thresholdExceeded) {
-      await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
+      await deps.updateContentItem(record.content.id, {
+        processingError: null,
+        status: "analyzed",
+      });
     } else {
-      await deps.updateContentItem(record.content.id, { processingError: null });
+      await deps.updateContentItem(record.content.id, {
+        processingError: null,
+      });
     }
 
-    return createCompletedStepResult<ContentAnalyzeBasicPayload, ContentAnalyzeHeavyJobData>({
+    return createCompletedStepResult<
+      ContentAnalyzeBasicPayload,
+      ContentAnalyzeHeavyJobData
+    >({
       message: "content.analyze.basic cache hit",
       nextStep: shouldQueueHeavy
         ? {
@@ -493,8 +607,12 @@ export async function runContentAnalyzeBasic(
           })
         : await deps.createAnalysisRecord(analysisRecordData);
 
-    const thresholdExceeded = basicAnalysis.valueScore > deps.appEnv.valueScoreThreshold;
-    const shouldQueueHeavy = shouldContinueToHeavy(thresholdExceeded, jobData.debugOptions);
+    const thresholdExceeded =
+      basicAnalysis.valueScore > deps.appEnv.valueScoreThreshold;
+    const shouldQueueHeavy = shouldContinueToHeavy(
+      thresholdExceeded,
+      jobData.debugOptions,
+    );
 
     logger.info("Stored basic analysis record", {
       analysisRecordId: analysisRecord.id,
@@ -504,12 +622,20 @@ export async function runContentAnalyzeBasic(
 
     // 更新内容状态
     if (!thresholdExceeded) {
-      await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
+      await deps.updateContentItem(record.content.id, {
+        processingError: null,
+        status: "analyzed",
+      });
     } else {
-      await deps.updateContentItem(record.content.id, { processingError: null });
+      await deps.updateContentItem(record.content.id, {
+        processingError: null,
+      });
     }
 
-    return createCompletedStepResult<ContentAnalyzeBasicPayload, ContentAnalyzeHeavyJobData>({
+    return createCompletedStepResult<
+      ContentAnalyzeBasicPayload,
+      ContentAnalyzeHeavyJobData
+    >({
       nextStep: shouldQueueHeavy
         ? {
             data: buildHeavyJobData(record.content.id, jobData.debugOptions),
@@ -529,8 +655,14 @@ export async function runContentAnalyzeBasic(
     });
   } catch (error) {
     const message = toErrorMessage(error);
-    logger.error("AI basic analysis failed", { error: message, contentId: record.content.id });
-    await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
+    logger.error("AI basic analysis failed", {
+      error: message,
+      contentId: record.content.id,
+    });
+    await deps.updateContentItem(record.content.id, {
+      processingError: message,
+      status: "failed",
+    });
     return buildContentStepFailure(message, {
       analysisRecordId: null,
       cached: false,
@@ -550,7 +682,7 @@ export async function runContentAnalyzeBasic(
  * 2. 依赖检查：必须已存在基础分析记录。
  * 3. 调用 AI 生成整体摘要与段落摘要。
  * 4. 存储分析记录 (status="full")。
- * 6. 无论成功与否，均推进内容状态至 analyzed，结束单篇文章的处理。
+ * 5. 无论成功与否，均推进内容状态至 analyzed，结束单篇文章的处理。
  */
 export async function runContentAnalyzeHeavy(
   jobData: ContentAnalyzeHeavyJobData,
@@ -569,13 +701,21 @@ export async function runContentAnalyzeHeavy(
   if (!record) {
     const message = `[services/analysis] Content "${jobData.contentId}" not found.`;
     logger.error("Content not found", { contentId: jobData.contentId });
-    return buildContentStepFailure(message, buildMissingHeavyPayload(jobData.contentId));
+    return buildContentStepFailure(
+      message,
+      buildMissingHeavyPayload(jobData.contentId),
+    );
   }
 
   if (!record.content.cleanedMd?.trim()) {
     const message = `[services/analysis] Content "${record.content.id}" has no cleaned markdown for heavy analysis.`;
-    logger.warn("Content has no cleaned markdown for heavy analysis", { contentId: record.content.id });
-    await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
+    logger.warn("Content has no cleaned markdown for heavy analysis", {
+      contentId: record.content.id,
+    });
+    await deps.updateContentItem(record.content.id, {
+      processingError: message,
+      status: "failed",
+    });
     return buildContentStepFailure(message, {
       ...buildMissingHeavyPayload(record.content.id),
       runtimeState: "disabled",
@@ -588,18 +728,34 @@ export async function runContentAnalyzeHeavy(
     taskConfig = deps.resolveHeavyTaskConfig();
   } catch (error) {
     const message = toErrorMessage(error);
-    logger.error("Failed to resolve heavy task config", { error: message, contentId: record.content.id });
-    await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
+    logger.error("Failed to resolve heavy task config", {
+      error: message,
+      contentId: record.content.id,
+    });
+    await deps.updateContentItem(record.content.id, {
+      processingError: message,
+      status: "failed",
+    });
     return buildContentStepFailure(message, {
       ...buildMissingHeavyPayload(record.content.id),
       runtimeState: "openrouter",
     });
   }
 
-  if (taskConfig.runtimeState === "disabled" || taskConfig.modelStrategy === null) {
-    const message = "[services/analysis] AI provider is not configured for content.analyze.heavy.";
-    logger.warn(message, { contentId: record.content.id, runtimeState: taskConfig.runtimeState });
-    await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
+  if (
+    taskConfig.runtimeState === "disabled" ||
+    taskConfig.modelStrategy === null
+  ) {
+    const message =
+      "[services/analysis] AI provider is not configured for content.analyze.heavy.";
+    logger.warn(message, {
+      contentId: record.content.id,
+      runtimeState: taskConfig.runtimeState,
+    });
+    await deps.updateContentItem(record.content.id, {
+      processingError: message,
+      status: "failed",
+    });
     return buildContentStepFailure(message, {
       ...buildMissingHeavyPayload(record.content.id),
       promptVersion: taskConfig.promptVersion,
@@ -607,7 +763,10 @@ export async function runContentAnalyzeHeavy(
     });
   }
 
-  const effectivePromptVersion = buildEffectivePromptVersion(taskConfig.promptVersion, jobData.debugOptions);
+  const effectivePromptVersion = buildEffectivePromptVersion(
+    taskConfig.promptVersion,
+    jobData.debugOptions,
+  );
 
   // 3. 缓存检查
   const cachedRecord = await deps.findAnalysisRecord(
@@ -622,7 +781,10 @@ export async function runContentAnalyzeHeavy(
       contentId: record.content.id,
       status: cachedRecord.status,
     });
-    await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
+    await deps.updateContentItem(record.content.id, {
+      processingError: null,
+      status: "analyzed",
+    });
 
     return createCompletedStepResult({
       message: "content.analyze.heavy cache hit",
@@ -639,12 +801,20 @@ export async function runContentAnalyzeHeavy(
   }
 
   // 4. 前序依赖检查 (Basic Record)
-  const basicRecord = await deps.findLatestBasicAnalysisRecordByContentId(record.content.id);
+  const basicRecord = await deps.findLatestBasicAnalysisRecordByContentId(
+    record.content.id,
+  );
 
   if (!basicRecord) {
     const message = `[services/analysis] Content "${record.content.id}" is missing a basic analysis record before heavy analysis.`;
-    logger.error("Content is missing a basic analysis record before heavy analysis", { contentId: record.content.id });
-    await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
+    logger.error(
+      "Content is missing a basic analysis record before heavy analysis",
+      { contentId: record.content.id },
+    );
+    await deps.updateContentItem(record.content.id, {
+      processingError: message,
+      status: "failed",
+    });
     return buildContentStepFailure(message, {
       ...buildMissingHeavyPayload(record.content.id),
       promptVersion: taskConfig.promptVersion,
@@ -709,7 +879,10 @@ export async function runContentAnalyzeHeavy(
     });
 
     // 推进状态至终点
-    await deps.updateContentItem(record.content.id, { processingError: null, status: "analyzed" });
+    await deps.updateContentItem(record.content.id, {
+      processingError: null,
+      status: "analyzed",
+    });
 
     return createCompletedStepResult({
       message: null,
@@ -725,8 +898,14 @@ export async function runContentAnalyzeHeavy(
     });
   } catch (error) {
     const message = toErrorMessage(error);
-    logger.error("AI heavy analysis failed", { error: message, contentId: record.content.id });
-    await deps.updateContentItem(record.content.id, { processingError: message, status: "failed" });
+    logger.error("AI heavy analysis failed", {
+      error: message,
+      contentId: record.content.id,
+    });
+    await deps.updateContentItem(record.content.id, {
+      processingError: message,
+      status: "failed",
+    });
     return buildContentStepFailure(message, {
       analysisRecordId: null,
       cached: false,
