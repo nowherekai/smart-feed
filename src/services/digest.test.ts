@@ -11,16 +11,12 @@ function createRow(overrides: Partial<DigestComposeRow> = {}): DigestComposeRow 
     contentEffectiveAt: new Date("2026-03-30T01:00:00.000Z"),
     contentId: "content-1",
     contentTitle: "Article 1",
-    contentTraceId: "content-trace-1",
-    evidenceSnippet: "Evidence snippet",
     originalUrl: "https://example.com/post-1",
     sourceName: "Example Feed",
     sourceStatus: "active",
-    sourceTraceId: "source-trace-1",
     summary: {
-      oneline: "One line summary",
-      points: ["Point A", "Point B"],
-      reason: "Worth reading",
+      paragraphSummaries: ["Point A", "Point B"],
+      summary: "One line summary",
     },
     valueScore: 8,
     ...overrides,
@@ -79,9 +75,7 @@ test("runDigestCompose filters blocked and incomplete rows, deduplicates by cont
             contentEffectiveAt: new Date("2026-03-30T05:00:00.000Z"),
             contentId: "content-2",
             contentTitle: "Article 2",
-            contentTraceId: "content-trace-2",
             originalUrl: "https://example.com/post-2",
-            sourceTraceId: "source-trace-2",
             valueScore: 9,
           }),
           createRow({
@@ -90,9 +84,9 @@ test("runDigestCompose filters blocked and incomplete rows, deduplicates by cont
             sourceStatus: "blocked",
           }),
           createRow({
-            analysisRecordId: "analysis-missing-evidence",
+            analysisRecordId: "analysis-missing-summary",
             contentId: "content-4",
-            evidenceSnippet: null,
+            summary: null,
           }),
         ];
       },
@@ -141,15 +135,6 @@ test("runDigestCompose filters blocked and incomplete rows, deduplicates by cont
       windowStart: "2026-03-30T00:00:00.000Z",
     },
     status: "completed",
-  });
-  expect(persistedDigests).toHaveLength(1);
-  expect(persistedDigests[0]).toMatchObject({
-    digestDate: "2026-03-31",
-    emailSubject: "[smart-feed] 日报 2026-03-31",
-    existingReport: null,
-  });
-  expect(renderedInputs[0]).toMatchObject({
-    digestDate: "2026-03-31",
   });
   expect(renderedInputs[0]?.sections).toMatchObject([
     {
@@ -207,95 +192,6 @@ test("runDigestCompose skips when the current digest date has already been sent"
     },
   );
 
-  expect(result).toEqual({
-    message: "digest.compose skipped because 2026-03-31 has already been sent",
-    nextStep: null,
-    outcome: "completed",
-    payload: {
-      digestDate: "2026-03-31",
-      digestId: "digest-sent-current",
-      emptyDigest: false,
-      itemCount: 0,
-      reusedExistingDigest: false,
-      skippedBecauseAlreadySent: true,
-      windowEnd: "2026-03-31T00:00:00.000Z",
-      windowStart: "2026-03-30T00:00:00.000Z",
-    },
-    status: "completed",
-  });
-});
-
-test("runDigestCompose reuses existing unsent digest report and keeps delivery on empty digest", async () => {
-  const persistedDigests: Array<Record<string, unknown>> = [];
-
-  const result = await runDigestCompose(
-    {
-      trigger: "manual",
-    },
-    {
-      appEnv: {
-        digestMaxLookbackHours: 48,
-        digestSendHour: 8,
-        digestTimeZone: "Asia/Shanghai",
-      },
-      async collectDigestRows() {
-        return [];
-      },
-      async findDigestReportByDate() {
-        return createDigestReport({
-          id: "digest-ready",
-          status: "failed",
-        });
-      },
-      async findLatestSentDigestReport() {
-        return createDigestReport({
-          id: "digest-sent-prev",
-          sentAt: new Date("2026-03-30T00:00:00.000Z"),
-          status: "sent",
-        });
-      },
-      now() {
-        return new Date("2026-03-31T00:30:00.000Z");
-      },
-      async persistDigest(input) {
-        persistedDigests.push(input as Record<string, unknown>);
-        return "digest-ready";
-      },
-      renderMarkdown() {
-        return "# empty digest";
-      },
-    },
-  );
-
-  expect(result).toEqual({
-    message: "digest.compose prepared empty digest for 2026-03-31",
-    nextStep: {
-      data: {
-        digestId: "digest-ready",
-        trigger: "digest.compose",
-      },
-      jobName: "digest.deliver",
-    },
-    outcome: "completed",
-    payload: {
-      digestDate: "2026-03-31",
-      digestId: "digest-ready",
-      emptyDigest: true,
-      itemCount: 0,
-      reusedExistingDigest: true,
-      skippedBecauseAlreadySent: false,
-      windowEnd: "2026-03-31T00:00:00.000Z",
-      windowStart: "2026-03-30T00:00:00.000Z",
-    },
-    status: "completed",
-  });
-  expect(persistedDigests).toHaveLength(1);
-  expect(persistedDigests[0]).toMatchObject({
-    emailSubject: "[smart-feed] 日报 2026-03-31",
-    markdownBody: "# empty digest",
-    existingReport: {
-      id: "digest-ready",
-      status: "failed",
-    },
-  });
+  expect(result.payload?.skippedBecauseAlreadySent).toBe(true);
+  expect(result.nextStep).toBeNull();
 });

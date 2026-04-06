@@ -70,7 +70,6 @@ const statusBadgeClassMap: Record<string, string> = {
   full: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
   completed:
     "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
-  rejected: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300",
   "failed-run": "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300",
   running: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300",
   pending: "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300",
@@ -125,7 +124,7 @@ function AnalysisRecordCard({ record, timeZone }: { record: ContentDetailAnalysi
               {record.status}
             </Badge>
             <span className="text-sm font-medium text-foreground">
-              {record.summary?.oneline ?? record.promptVersion}
+              {record.summary?.summary ?? record.promptVersion}
             </span>
           </div>
           <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
@@ -156,22 +155,16 @@ function AnalysisRecordCard({ record, timeZone }: { record: ContentDetailAnalysi
           ))}
         </div>
 
-        {record.summary?.points.length ? (
+        {record.summary?.paragraphSummaries.length ? (
           <ul className="space-y-2 text-sm text-foreground">
-            {record.summary.points.map((point) => (
+            {record.summary.paragraphSummaries.map((point) => (
               <li key={`${record.id}-point-${point}`}>{point}</li>
             ))}
           </ul>
         ) : null}
 
-        {record.summary?.reason ? (
-          <p className="text-sm leading-6 text-muted-foreground">{record.summary.reason}</p>
-        ) : null}
-
-        {record.evidenceSnippet ? (
-          <blockquote className="rounded-xl border border-border/70 bg-muted/40 p-3 text-sm leading-6 text-foreground">
-            {record.evidenceSnippet}
-          </blockquote>
+        {record.summary?.summary ? (
+          <p className="text-sm leading-6 text-muted-foreground">{record.summary.summary}</p>
         ) : null}
       </div>
     </div>

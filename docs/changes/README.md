@@ -29,6 +29,7 @@
 | [023](arch/023_service-layer-structured-logging-and-log-guardrails.md) | 2026-04-02 | 服务层结构化日志增强与日志边界收敛 |
 | [024](arch/024_backend-scoped-log-format-unification.md) | 2026-04-02 | 后端组件化日志格式统一 |
 | [025](arch/025_ai-client-modular-refactor.md) | 2026-04-04 | AI Client 模块化拆分与职责分离 |
+| [026](arch/026_ai-summary-contract-reset-and-digest-link-first.md) | 2026-04-06 | AI 摘要契约重构与 Digest 回链优先 |
 
 ## 运维变更
 

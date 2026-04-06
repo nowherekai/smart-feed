@@ -6,7 +6,6 @@ type BaseSummaryRecord = {
   id: string;
   summary: RequiredSummary;
   sourceName: string;
-  evidenceSnippet: string | null;
   originalUrl: string;
 };
 
@@ -30,7 +29,6 @@ export function toIntelligenceCardRecord(record: AnalysisRecord): IntelligenceCa
     id: record.id,
     summary: record.summary,
     sourceName: record.sourceName,
-    evidenceSnippet: record.evidenceSnippet,
     originalUrl: record.originalUrl,
     categories: record.categories ?? [],
     valueScore: record.valueScore,
@@ -46,7 +44,6 @@ export function toDigestItemRecord(record: AnalysisRecord): DigestItemRecord | n
     id: record.id,
     summary: record.summary,
     sourceName: record.sourceName,
-    evidenceSnippet: record.evidenceSnippet,
     originalUrl: record.originalUrl,
   };
 }

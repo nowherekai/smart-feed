@@ -76,24 +76,32 @@ const PROMPTS: PromptRegistry = {
     promptVersion: "basic-analysis-v1",
     schema: BasicAnalysisSchema,
     schemaName: "basic_analysis",
-    schemaDescription: "内容轻量分析结果，包含分类、关键词、实体、语言、情绪和价值分。",
+    schemaDescription: "内容轻量分析结果，包含分类、关键词、实体、语言和价值分。",
     getModelStrategy(runtimeState) {
       return runtimeState === "dummy" ? "dummy-basic" : "openrouter-basic";
     },
     buildMessages(input) {
       return {
-        system:
-          "你是 smart-feed 的内容分析器。请只基于给定内容输出 JSON 对象，不要输出 markdown、代码块、解释或 reasoning，也不要补充正文中不存在的事实。",
-        prompt: [
-          "请分析下面的文章，并且只输出一个 JSON 对象。",
-          "JSON key 必须严格使用以下英文字段名：categories、keywords、entities、language、sentiment、valueScore。",
-          "categories、keywords、entities 必须是字符串数组。",
-          'language 只能输出 "zh" 或 "en"。',
-          'sentiment 只能输出 "positive"、"neutral"、"negative"、"mixed" 之一。',
-          "valueScore 必须输出 0-10 的整数，不能输出小数、百分制，也不能输出中文描述。",
-          "价值分用于决定是否进入后续深度摘要。",
-          buildContentPrompt(input),
-        ].join("\n\n"),
+        system: `你是 smart-feed 的内容分析器。你的任务是仅基于提供的输入内容生成结构化分析结果。
+
+          输出要求：
+          1. 只输出一个合法的 JSON 对象。
+          2. 不要输出任何额外文本（包括解释、说明、前后缀、markdown、代码块或注释）。
+          3. 不要包含推理过程（reasoning）或中间思考。
+          4. 不要补充、猜测或引入输入内容中未明确提供的信息。
+          5. 所有字段内容必须直接来源于输入文本或可从中明确提取，categories、keywords、entities从上下文明显可推断的实体或关键词中提取。
+          6. 空数组或空字段必须保持为空数组，不要使用 null。
+
+          字段说明：
+          - categories：内容所属分类，最多 4 个。
+          - keywords：核心关键词，最多 4 个。
+          - entities：识别出的关键实体，最多 4 个。
+          - language：语言代码，如 zh、en。
+          - valueScore：基于文档对读者或业务价值的评分，一手信息高分，0-10 分。
+
+          请严格按照上述结构输出 JSON，不要有多余字段。
+          `,
+        prompt: [buildContentPrompt(input)].join("\n\n"),
       };
     },
   },
@@ -103,21 +111,28 @@ const PROMPTS: PromptRegistry = {
     promptVersion: "heavy-summary-v1",
     schema: HeavySummarySchema,
     schemaName: "heavy_summary",
-    schemaDescription: "内容深度摘要结果，包含一句话总结、三条要点、关注理由和证据片段。",
+    schemaDescription: "内容深度摘要结果",
     getModelStrategy(runtimeState) {
       return runtimeState === "dummy" ? "dummy-heavy" : "openrouter-heavy";
     },
     buildMessages(input) {
       return {
-        system:
-          "你是 smart-feed 的摘要生成器。请只基于给定内容输出 JSON 对象，不要输出 markdown、代码块、解释或 reasoning。证据片段必须直接摘自正文。",
-        prompt: [
-          "请生成一句话总结、最多三条要点、关注理由，以及一段可直接追溯到正文的证据片段。",
-          "JSON key 必须严格使用以下英文字段名：oneline、points、reason、evidenceSnippet。",
-          "oneline、reason、evidenceSnippet 必须是非空字符串。",
-          "points 必须是 1-3 条字符串数组，不能输出对象，也不能输出中文 key。",
-          buildContentPrompt(input),
-        ].join("\n\n"),
+        system: `你是 smart-feed 的内容分析助手。你的任务是从提供的文档中提炼核心信息，并生成结构化摘要。请严格遵循以下要求：
+          输出要求：
+          1. 只输出一个合法的 JSON 对象，不要 Markdown、代码块或其他文本。
+          2. 不要包含推理过程、评论或个人意见。
+          3. 空字段保持为空数组或空字符串，不要使用 null。
+          4. 所有字段内容必须直接来源于文本或可明确提取。
+
+          JSON 字段说明：
+          1. "summary": 文档整体摘要，用一段话概括核心内容和主要信息。
+          2. "paragraphSummaries": 每个段落的摘要列表；如果文档短或不需要可为空数组。
+
+          注意事项：
+          1. summary 应简洁明确，抓住核心内容。
+          2. paragraphSummaries 必须紧贴文本，不允许补充未出现的信息。
+          3. 输出 JSON 必须干净、严格符合上述字段和结构。`,
+        prompt: [buildContentPrompt(input)].join("\n\n"),
       };
     },
   },

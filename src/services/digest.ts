@@ -1,7 +1,7 @@
 /**
  * 摘要编排服务模块
  * 负责日报（Daily Digest）的生成与编排逻辑。
- * 包含：动态统计窗口计算、多条件内容筛选（时间、评分、可追溯性）、内容自动分组、Markdown 渲染及数据库事务持久化。
+ * 包含：动态统计窗口计算、多条件内容筛选（时间、评分、摘要完整性）、内容自动分组、Markdown 渲染及数据库事务持久化。
  */
 
 import { and, desc, eq, gte, lte, ne } from "drizzle-orm";
@@ -12,7 +12,6 @@ import { createCompletedStepResult, type PipelineStepResult } from "../pipeline/
 import { smartFeedTaskNames } from "../queue";
 import { createLogger, getDigestWindow } from "../utils";
 import { type DigestRenderableItem, type DigestRenderSection, renderDigestMarkdown } from "./digest-renderer";
-import { canEnterDigest } from "./traceability";
 
 // 类型定义
 type DigestReportRecord = typeof digestReports.$inferSelect;
@@ -30,12 +29,9 @@ type DigestComposeRow = {
   contentEffectiveAt: Date;
   contentId: string;
   contentTitle: string | null;
-  contentTraceId: string | null;
-  evidenceSnippet: string | null;
   originalUrl: string;
   sourceName: string;
   sourceStatus: "active" | "blocked" | "paused";
-  sourceTraceId: string | null;
   summary: DigestSummary | null;
   valueScore: number;
 };
@@ -146,10 +142,9 @@ function getEmailSubject(digestDate: string): string {
 function hasRenderableSummary(summary: DigestSummary | null): summary is DigestSummary {
   return Boolean(
     summary &&
-      typeof summary.oneline === "string" &&
-      typeof summary.reason === "string" &&
-      Array.isArray(summary.points) &&
-      summary.points.length > 0,
+      typeof summary.summary === "string" &&
+      summary.summary.trim().length > 0 &&
+      Array.isArray(summary.paragraphSummaries),
   );
 }
 
@@ -185,7 +180,7 @@ function sortDigestItems(left: DigestSectionItem, right: DigestSectionItem): num
  * 筛选与分组逻辑
  * 1. 排除 blocked 来源。
  * 2. 必须有完整摘要。
- * 3. 必须通过可追溯性校验 (Traceability)。
+ * 3. 必须保留原文链接与来源信息。
  * 4. 同一篇内容若有多次分析，取最新的一条。
  * 5. 按主分类分组。
  */
@@ -203,24 +198,7 @@ function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidat
       continue;
     }
 
-    // 可追溯性校验
-    if (
-      !canEnterDigest({
-        contentTraceId: row.contentTraceId,
-        evidenceSnippet: row.evidenceSnippet,
-        originalUrl: row.originalUrl,
-        sourceName: row.sourceName,
-        sourceTraceId: row.sourceTraceId,
-      })
-    ) {
-      logger.debug("Content skipped from digest due to traceability check", {
-        contentId: row.contentId,
-        sourceName: row.sourceName,
-      });
-      continue;
-    }
-
-    if (!row.contentTraceId || !row.evidenceSnippet || !row.sourceTraceId) {
+    if (!row.sourceName.trim() || !row.originalUrl.trim()) {
       continue;
     }
 
@@ -229,12 +207,9 @@ function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidat
       analysisRecordId: row.analysisRecordId,
       contentEffectiveAt: row.contentEffectiveAt,
       contentId: row.contentId,
-      contentTraceId: row.contentTraceId,
-      evidenceSnippet: row.evidenceSnippet,
       originalUrl: row.originalUrl,
       sectionTitle: getSectionTitle(row.categories),
       sourceName: row.sourceName,
-      sourceTraceId: row.sourceTraceId,
       summary: row.summary,
       title: row.contentTitle?.trim() ? row.contentTitle.trim() : row.originalUrl,
       valueScore: row.valueScore,
@@ -311,12 +286,9 @@ async function collectDigestRows(windowStart: Date, windowEnd: Date): Promise<Di
       contentEffectiveAt: contentItems.effectiveAt,
       contentId: contentItems.id,
       contentTitle: contentItems.title,
-      contentTraceId: analysisRecords.contentTraceId,
-      evidenceSnippet: analysisRecords.evidenceSnippet,
       originalUrl: analysisRecords.originalUrl,
       sourceName: analysisRecords.sourceName,
       sourceStatus: sources.status,
-      sourceTraceId: analysisRecords.sourceTraceId,
       summary: analysisRecords.summary,
       valueScore: analysisRecords.valueScore,
     })

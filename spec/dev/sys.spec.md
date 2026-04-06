@@ -11,13 +11,13 @@
 
 ### 1.1 系统定位
 
-smart-feed 是一个个人情报处理系统，将用户配置的 RSS 订阅源转化为每日可追溯的智能摘要。
+smart-feed 是一个个人情报处理系统，将用户配置的 RSS 订阅源转化为每日智能编排的摘要。
 
 ### 1.2 核心设计原则
 
 1. **后台异步优先** - 抓取、分析、编排均在后台完成，Web 层仅负责配置与展示
 2. **数据分离** - 原始数据与加工数据分表存储，支持重新处理
-3. **可追溯性** - 所有 AI 结论必须关联来源、原文链接与证据片段
+3. **可回链阅读** - 所有摘要结果必须保留来源名称与原文链接
 4. **规则优先，AI 补洞** - 去重、过滤用规则，分类、摘要用 AI
 5. **轻模型前置，重模型后置** - 先筛选后深度分析，控制成本
 6. **模块解耦** - 前台、调度、Worker、AI 层、数据层清晰分离
@@ -164,20 +164,17 @@ interface AnalysisRecord {
   keywords: string[];
   entities?: string[];           // 实体抽取
   language?: string;
-  sentiment?: string;
   value_score: number;           // 0-10
   summary: {
-    oneline: string;
-    points: string[];
-    reason: string;
+    summary: string;
+    paragraphSummaries: string[];
   } | null;
-  evidence_snippet: string | null;
   source_id: string;             // 冗余字段，便于查询
   source_name: string;
   source_trace_id?: string;      // 派生的对外追踪标识
   content_trace_id?: string;     // 派生的对外追踪标识
   original_url: string;
-  status: "basic" | "full" | "rejected";
+  status: "basic" | "full";
   created_at: Date;
 }
 
@@ -292,12 +289,11 @@ FeedbackSignal (N) ────► (1) Source/ContentItem/Topic
    - `cleaned_md` 可重新生成
    - `AnalysisRecord` 支持多版本共存
 
-3. **可追溯性要求**
+3. **Digest 准入要求**
    - 进入 Digest 的 `AnalysisRecord` 必须包含:
-     - `source_trace_id` + `source_name`
-     - `content_trace_id`
+     - `summary.summary`
      - `original_url`
-     - `evidence_snippet`
+     - `source_name`
 
 4. **时间筛选窗口**
    - `effective_time = published_at ?? fetched_at`
@@ -418,7 +414,7 @@ const PROMPT_VERSIONS = {
   "heavy-summary-v1": {
     system: "你是摘要生成助手...",
     user: "生成摘要: {content}",
-    output_schema: SummarySchema
+    output_schema: HeavySummarySchema
   }
 };
 ```

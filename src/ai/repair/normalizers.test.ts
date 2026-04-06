@@ -1,23 +1,11 @@
 import { expect, test } from "bun:test";
 
-import {
-  normalizeHeavySummaryCandidate,
-  normalizeLanguage,
-  normalizeSentiment,
-  normalizeValueScore,
-} from "./normalizers";
+import { normalizeHeavySummaryCandidate, normalizeLanguage, normalizeValueScore } from "./normalizers";
 
 test("normalizeLanguage maps localized aliases to canonical codes", () => {
   expect(normalizeLanguage("中文")).toBe("zh");
   expect(normalizeLanguage("English")).toBe("en");
   expect(normalizeLanguage("ja")).toBe("ja");
-});
-
-test("normalizeSentiment maps localized values to schema enum", () => {
-  expect(normalizeSentiment("积极")).toBe("positive");
-  expect(normalizeSentiment("中性")).toBe("neutral");
-  expect(normalizeSentiment("负面")).toBe("negative");
-  expect(normalizeSentiment("复杂")).toBe("mixed");
 });
 
 test("normalizeValueScore handles fractions and percentages", () => {
@@ -27,18 +15,14 @@ test("normalizeValueScore handles fractions and percentages", () => {
   expect(normalizeValueScore("unknown")).toBeUndefined();
 });
 
-test("normalizeHeavySummaryCandidate trims and truncates points to three items", () => {
+test("normalizeHeavySummaryCandidate trims and normalizes paragraph summaries", () => {
   expect(
     normalizeHeavySummaryCandidate({
-      一句话总结: "  一句话总结  ",
-      关注理由: " 值得关注 ",
-      引用片段: " 原文证据 ",
-      要点列表: "第一点；第二点；第三点；第四点",
+      整体摘要: "  一段摘要  ",
+      分段摘要: "第一段；第二段；第三段",
     }),
   ).toEqual({
-    evidenceSnippet: "原文证据",
-    oneline: "一句话总结",
-    points: ["第一点", "第二点", "第三点"],
-    reason: "值得关注",
+    paragraphSummaries: ["第一段", "第二段", "第三段"],
+    summary: "一段摘要",
   });
 });

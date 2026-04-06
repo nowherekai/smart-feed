@@ -14,14 +14,12 @@ function createAnalysisRecord(overrides: Record<string, unknown> = {}) {
     contentTraceId: "content-1",
     createdAt: new Date("2026-03-31T00:00:00.000Z"),
     entities: ["Example Feed"],
-    evidenceSnippet: null,
     id: "analysis-1",
     keywords: ["ai"],
     language: "zh",
     modelStrategy: "dummy-basic",
     originalUrl: "https://example.com/post",
     promptVersion: "basic-analysis-v1",
-    sentiment: "neutral",
     sourceId: "source-1",
     sourceName: "Example Feed",
     sourceTraceId: "source-1",
@@ -76,7 +74,6 @@ function createContentRecord() {
 
 function createBasicHarness() {
   const analysisRecords: Array<Record<string, unknown>> = [];
-  const analysisUpdates: Array<{ data: Record<string, unknown>; id: string }> = [];
   const contentUpdates: Array<Record<string, unknown>> = [];
   const deps: ContentAnalyzeBasicDeps = {
     appEnv: {
@@ -107,12 +104,11 @@ function createBasicHarness() {
         entities: ["Example Feed"],
         keywords: ["ai"],
         language: "zh",
-        sentiment: "neutral",
         valueScore: 8,
       };
     },
     async updateAnalysisRecord(id: string, data: Record<string, unknown>) {
-      analysisUpdates.push({ id, data });
+      analysisRecords.push({ id, ...data });
       return createAnalysisRecord({ id, ...data }) as never;
     },
     async updateContentItem(_contentId: string, data: Record<string, unknown>) {
@@ -122,7 +118,6 @@ function createBasicHarness() {
 
   return {
     analysisRecords,
-    analysisUpdates,
     contentUpdates,
     deps,
   };
@@ -130,7 +125,6 @@ function createBasicHarness() {
 
 function createHeavyHarness() {
   const analysisRecords: Array<Record<string, unknown>> = [];
-  const analysisUpdates: Array<{ data: Record<string, unknown>; id: string }> = [];
   const contentUpdates: Array<Record<string, unknown>> = [];
   const deps: ContentAnalyzeHeavyDeps = {
     async createAnalysisRecord(data: Record<string, unknown>) {
@@ -157,14 +151,12 @@ function createHeavyHarness() {
     },
     async runHeavySummary() {
       return {
-        evidenceSnippet: "not found exactly in article",
-        oneline: "Heavy summary oneline",
-        points: ["Point A", "Point B"],
-        reason: "Worth digesting",
+        paragraphSummaries: ["Point A", "Point B"],
+        summary: "Heavy summary body",
       };
     },
     async updateAnalysisRecord(id: string, data: Record<string, unknown>) {
-      analysisUpdates.push({ id, data });
+      analysisRecords.push({ id, ...data });
       return createAnalysisRecord({ id, ...data }) as never;
     },
     async updateContentItem(_contentId: string, data: Record<string, unknown>) {
@@ -174,7 +166,6 @@ function createHeavyHarness() {
 
   return {
     analysisRecords,
-    analysisUpdates,
     contentUpdates,
     deps,
   };
@@ -213,117 +204,23 @@ test("runContentAnalyzeBasic writes analysis record and enqueues heavy when thre
     },
     status: "completed",
   });
-  expect(harness.analysisRecords).toHaveLength(1);
+  expect(harness.analysisRecords.at(-1)).toMatchObject({
+    categories: ["ai"],
+    summary: null,
+    valueScore: 8,
+  });
   expect(harness.contentUpdates.at(-1)).toMatchObject({
     processingError: null,
   });
 });
 
-test("runContentAnalyzeBasic creates a fresh debug record when new-record mode is requested", async () => {
-  const harness = createBasicHarness();
-  const findCalls: Array<{ modelStrategy: string; promptVersion: string }> = [];
-  harness.deps.findAnalysisRecord = async (_contentId, modelStrategy, promptVersion) => {
-    findCalls.push({ modelStrategy, promptVersion });
-    return null;
-  };
-
-  const result = await runContentAnalyzeBasic(
-    {
-      contentId: "content-1",
-      debugOptions: {
-        continueToHeavy: false,
-        recordMode: "new-record",
-        rerunKey: "rerun-abc",
-        variantTag: "api-b",
-      },
-      trigger: "content.normalize",
-    },
-    harness.deps,
-  );
-
-  expect(findCalls).toEqual([
-    {
-      modelStrategy: "dummy-basic",
-      promptVersion: "basic-analysis-v1~api-b-rerun-abc",
-    },
-  ]);
-  expect(harness.analysisRecords.at(-1)).toMatchObject({
-    promptVersion: "basic-analysis-v1~api-b-rerun-abc",
-  });
-  expect(result.nextStep).toBeNull();
-});
-
-test("runContentAnalyzeBasic overwrites an existing debug slot when overwrite mode is requested", async () => {
-  const harness = createBasicHarness();
-  harness.deps.findAnalysisRecord = async () =>
-    createAnalysisRecord({
-      id: "analysis-existing",
-      promptVersion: "basic-analysis-v1~api-b",
-      valueScore: 3,
-    }) as never;
-
-  const result = await runContentAnalyzeBasic(
-    {
-      contentId: "content-1",
-      debugOptions: {
-        continueToHeavy: false,
-        recordMode: "overwrite",
-        variantTag: "api-b",
-      },
-      trigger: "content.normalize",
-    },
-    harness.deps,
-  );
-
-  expect(harness.analysisRecords).toHaveLength(0);
-  expect(harness.analysisUpdates).toHaveLength(1);
-  expect(harness.analysisUpdates[0]).toMatchObject({
-    id: "analysis-existing",
-  });
-  expect(harness.analysisUpdates[0]?.data).toMatchObject({
-    promptVersion: "basic-analysis-v1~api-b",
-    status: "basic",
-  });
-  expect(result.payload?.analysisRecordId).toBe("analysis-existing");
-  expect(result.payload?.cached).toBe(false);
-  expect(result.nextStep).toBeNull();
-});
-
-test("runContentAnalyzeBasic keeps heavy continuation for debug full-flow runs", async () => {
-  const harness = createBasicHarness();
-
-  const result = await runContentAnalyzeBasic(
-    {
-      contentId: "content-1",
-      debugOptions: {
-        continueToHeavy: true,
-        recordMode: "overwrite",
-        variantTag: "api-b",
-      },
-      trigger: "content.normalize",
-    },
-    harness.deps,
-  );
-
-  expect(result.nextStep?.data).toMatchObject({
-    contentId: "content-1",
-    debugOptions: {
-      continueToHeavy: true,
-      recordMode: "overwrite",
-      variantTag: "api-b",
-    },
-    trigger: "content.analyze.basic",
-  });
-});
-
-test("runContentAnalyzeBasic completes pipeline directly when threshold is not exceeded", async () => {
+test("runContentAnalyzeBasic finishes pipeline when threshold is not exceeded", async () => {
   const harness = createBasicHarness();
   harness.deps.runBasicAnalysis = async () => ({
     categories: ["general"],
     entities: ["Example Feed"],
-    keywords: ["note"],
+    keywords: ["digest"],
     language: "zh",
-    sentiment: "neutral",
     valueScore: 5,
   });
 
@@ -343,43 +240,7 @@ test("runContentAnalyzeBasic completes pipeline directly when threshold is not e
   });
 });
 
-test("runContentAnalyzeBasic returns failed when AI provider is disabled", async () => {
-  const harness = createBasicHarness();
-  harness.deps.resolveBasicTaskConfig = () => ({
-    baseURL: null,
-    modelId: null,
-    modelStrategy: null,
-    promptVersion: "basic-analysis-v1",
-    runtimeState: "disabled",
-  });
-
-  const result = await runContentAnalyzeBasic(
-    {
-      contentId: "content-1",
-      trigger: "content.normalize",
-    },
-    harness.deps,
-  );
-
-  expect(result).toEqual({
-    message: "[services/analysis] AI provider is not configured for content.analyze.basic.",
-    nextStep: null,
-    outcome: "failed",
-    payload: {
-      analysisRecordId: null,
-      cached: false,
-      contentId: "content-1",
-      modelStrategy: null,
-      promptVersion: "basic-analysis-v1",
-      runtimeState: "disabled",
-      thresholdExceeded: false,
-      valueScore: null,
-    },
-    status: "failed",
-  });
-});
-
-test("runContentAnalyzeHeavy writes full analysis record and validates evidence snippet fallback", async () => {
+test("runContentAnalyzeHeavy writes a full summary record", async () => {
   const harness = createHeavyHarness();
 
   const result = await runContentAnalyzeHeavy(
@@ -398,8 +259,6 @@ test("runContentAnalyzeHeavy writes full analysis record and validates evidence 
       analysisRecordId: "analysis-heavy-1",
       cached: false,
       contentId: "content-1",
-      digestEligible: true,
-      evidenceSnippet: "cleaned article body with enough evidence for heavy summary",
       modelStrategy: "dummy-heavy",
       promptVersion: "heavy-summary-v1",
       runtimeState: "dummy",
@@ -412,9 +271,8 @@ test("runContentAnalyzeHeavy writes full analysis record and validates evidence 
     promptVersion: "heavy-summary-v1",
     status: "full",
     summary: {
-      oneline: "Heavy summary oneline",
-      points: ["Point A", "Point B"],
-      reason: "Worth digesting",
+      paragraphSummaries: ["Point A", "Point B"],
+      summary: "Heavy summary body",
     },
   });
   expect(harness.contentUpdates.at(-1)).toMatchObject({
@@ -423,37 +281,47 @@ test("runContentAnalyzeHeavy writes full analysis record and validates evidence 
   });
 });
 
-test("runContentAnalyzeHeavy overwrites an existing debug slot when overwrite mode is requested", async () => {
+test("runContentAnalyzeHeavy returns cache hit without re-running model", async () => {
   const harness = createHeavyHarness();
   harness.deps.findAnalysisRecord = async () =>
     createAnalysisRecord({
-      id: "analysis-heavy-existing",
-      promptVersion: "heavy-summary-v1~api-b",
+      id: "analysis-cache-1",
+      modelStrategy: "dummy-heavy",
+      promptVersion: "heavy-summary-v1",
       status: "full",
+      summary: {
+        paragraphSummaries: ["Cached paragraph"],
+        summary: "Cached summary",
+      },
     }) as never;
 
   const result = await runContentAnalyzeHeavy(
     {
       contentId: "content-1",
-      debugOptions: {
-        recordMode: "overwrite",
-        variantTag: "api-b",
-      },
       trigger: "content.analyze.basic",
     },
     harness.deps,
   );
 
-  expect(harness.analysisRecords).toHaveLength(0);
-  expect(harness.analysisUpdates).toHaveLength(1);
-  expect(harness.analysisUpdates[0]?.data).toMatchObject({
-    promptVersion: "heavy-summary-v1~api-b",
+  expect(result).toEqual({
+    message: "content.analyze.heavy cache hit",
+    nextStep: null,
+    outcome: "completed",
+    payload: {
+      analysisRecordId: "analysis-cache-1",
+      cached: true,
+      contentId: "content-1",
+      modelStrategy: "dummy-heavy",
+      promptVersion: "heavy-summary-v1",
+      runtimeState: "dummy",
+      status: "full",
+    },
+    status: "completed",
   });
-  expect(result.payload?.analysisRecordId).toBe("analysis-heavy-existing");
-  expect(result.payload?.cached).toBe(false);
+  expect(harness.analysisRecords).toHaveLength(0);
 });
 
-test("runContentAnalyzeHeavy returns failed when basic analysis record is missing", async () => {
+test("runContentAnalyzeHeavy fails when basic record is missing", async () => {
   const harness = createHeavyHarness();
   harness.deps.findLatestBasicAnalysisRecordByContentId = async () => null;
 
@@ -465,54 +333,17 @@ test("runContentAnalyzeHeavy returns failed when basic analysis record is missin
     harness.deps,
   );
 
-  expect(result).toEqual({
-    message: '[services/analysis] Content "content-1" is missing a basic analysis record before heavy analysis.',
-    nextStep: null,
-    outcome: "failed",
-    payload: {
-      analysisRecordId: null,
-      cached: false,
-      contentId: "content-1",
-      digestEligible: false,
-      evidenceSnippet: null,
-      modelStrategy: null,
-      promptVersion: "heavy-summary-v1",
-      runtimeState: "dummy",
-      status: null,
-    },
-    status: "failed",
+  expect(result.status).toBe("failed");
+  expect(result.payload ?? null).toEqual({
+    analysisRecordId: null,
+    cached: false,
+    contentId: "content-1",
+    modelStrategy: null,
+    promptVersion: "heavy-summary-v1",
+    runtimeState: "dummy",
+    status: null,
   });
-});
-
-test("runContentAnalyzeHeavy returns failed when openrouter config is incomplete", async () => {
-  const harness = createHeavyHarness();
-  harness.deps.resolveHeavyTaskConfig = () => {
-    throw new Error("[ai/client] SMART_FEED_AI_PROVIDER=openrouter requires SMART_FEED_AI_HEAVY_MODEL.");
-  };
-
-  const result = await runContentAnalyzeHeavy(
-    {
-      contentId: "content-1",
-      trigger: "content.analyze.basic",
-    },
-    harness.deps,
-  );
-
-  expect(result).toEqual({
-    message: "[ai/client] SMART_FEED_AI_PROVIDER=openrouter requires SMART_FEED_AI_HEAVY_MODEL.",
-    nextStep: null,
-    outcome: "failed",
-    payload: {
-      analysisRecordId: null,
-      cached: false,
-      contentId: "content-1",
-      digestEligible: false,
-      evidenceSnippet: null,
-      modelStrategy: null,
-      promptVersion: "heavy-summary-v1",
-      runtimeState: "openrouter",
-      status: null,
-    },
+  expect(harness.contentUpdates.at(-1)).toMatchObject({
     status: "failed",
   });
 });

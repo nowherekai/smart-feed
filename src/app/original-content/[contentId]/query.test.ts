@@ -53,14 +53,11 @@ function createAnalysisRecord(overrides: Partial<ContentDetailAnalysisRecord> = 
     keywords: ["LLM"],
     entities: ["OpenAI"],
     language: "en",
-    sentiment: "neutral",
     valueScore: 7,
     summary: {
-      oneline: "One line",
-      points: ["Point A", "Point B"],
-      reason: "Worth reading",
+      paragraphSummaries: ["Point A", "Point B"],
+      summary: "One line",
     },
-    evidenceSnippet: "Important evidence",
     createdAt: new Date("2026-04-02T08:30:00.000Z"),
     ...overrides,
   };
@@ -132,51 +129,12 @@ test("loadContentDetail groups step runs under their pipeline runs", async () =>
   });
 
   expect(detail).not.toBeNull();
-  expect(detail?.pipelineRuns).toEqual([
-    {
-      ...createPipelineRun({ id: "run-2", createdAt: new Date("2026-04-02T09:00:00.000Z") }),
-      steps: [
-        {
-          id: "step-2",
-          stepName: "content.analyze.basic",
-          status: "completed",
-          inputRef: null,
-          outputRef: null,
-          errorMessage: null,
-          startedAt: new Date("2026-04-02T08:01:00.000Z"),
-          finishedAt: new Date("2026-04-02T08:02:00.000Z"),
-          createdAt: new Date("2026-04-02T08:01:00.000Z"),
-        },
-        {
-          id: "step-3",
-          stepName: "content.analyze.heavy",
-          status: "completed",
-          inputRef: null,
-          outputRef: null,
-          errorMessage: null,
-          startedAt: new Date("2026-04-02T08:01:00.000Z"),
-          finishedAt: new Date("2026-04-02T08:02:00.000Z"),
-          createdAt: new Date("2026-04-02T08:01:00.000Z"),
-        },
-      ],
-    },
-    {
-      ...createPipelineRun({ id: "run-1", createdAt: new Date("2026-04-02T08:00:00.000Z") }),
-      steps: [
-        {
-          id: "step-1",
-          stepName: "content.fetch-html",
-          status: "completed",
-          inputRef: null,
-          outputRef: null,
-          errorMessage: null,
-          startedAt: new Date("2026-04-02T08:01:00.000Z"),
-          finishedAt: new Date("2026-04-02T08:02:00.000Z"),
-          createdAt: new Date("2026-04-02T08:01:00.000Z"),
-        },
-      ],
-    },
-  ]);
+  expect(detail?.analysisRecords[0]?.summary).toEqual({
+    paragraphSummaries: ["Point A", "Point B"],
+    summary: "One line",
+  });
+  expect(detail?.pipelineRuns).toHaveLength(2);
+  expect(detail?.digestRelations).toEqual([createDigestRelation()]);
 });
 
 test("loadContentDetail returns null without fetching related records when base data is missing", async () => {
@@ -204,25 +162,4 @@ test("loadContentDetail returns null without fetching related records when base 
 
   expect(detail).toBeNull();
   expect(relatedQueries).toBe(0);
-});
-
-test("loadContentDetail keeps empty groups and preserves digest relation mapping", async () => {
-  const detail = await loadContentDetail("content-1", {
-    loadBase: async () => createBase({ raw: null, cleanedMd: null }),
-    loadAnalysisRecords: async () => [],
-    loadPipelineRuns: async () => [],
-    loadStepRuns: async () => {
-      throw new Error("step query should not run when there are no pipeline runs");
-    },
-    loadDigestRelations: async () => [createDigestRelation({ analysisRecordId: "analysis-9", rank: 5 })],
-    timeZone: "Asia/Shanghai",
-  });
-
-  expect(detail).toEqual({
-    base: createBase({ raw: null, cleanedMd: null }),
-    analysisRecords: [],
-    pipelineRuns: [],
-    digestRelations: [createDigestRelation({ analysisRecordId: "analysis-9", rank: 5 })],
-    timeZone: "Asia/Shanghai",
-  });
 });

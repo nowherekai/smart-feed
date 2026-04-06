@@ -101,10 +101,8 @@ async function loadAnalysisRecords(contentId: string): Promise<ContentDetailAnal
       keywords: analysisRecords.keywords,
       entities: analysisRecords.entities,
       language: analysisRecords.language,
-      sentiment: analysisRecords.sentiment,
       valueScore: analysisRecords.valueScore,
       summary: analysisRecords.summary,
-      evidenceSnippet: analysisRecords.evidenceSnippet,
       createdAt: analysisRecords.createdAt,
     })
     .from(analysisRecords)
@@ -115,9 +113,8 @@ async function loadAnalysisRecords(contentId: string): Promise<ContentDetailAnal
     ...row,
     summary: row.summary
       ? {
-          oneline: row.summary.oneline,
-          points: row.summary.points,
-          reason: row.summary.reason,
+          paragraphSummaries: row.summary.paragraphSummaries,
+          summary: row.summary.summary,
         }
       : null,
   }));

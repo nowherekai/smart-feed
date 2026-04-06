@@ -1,4 +1,4 @@
-CREATE TYPE "public"."analysis_status" AS ENUM('basic', 'full', 'rejected');--> statement-breakpoint
+CREATE TYPE "public"."analysis_status" AS ENUM('basic', 'full');--> statement-breakpoint
 CREATE TYPE "public"."content_kind" AS ENUM('article', 'video-transcript', 'podcast-transcript', 'newsletter');--> statement-breakpoint
 CREATE TYPE "public"."content_status" AS ENUM('sentinel', 'raw', 'normalized', 'analyzed', 'digested', 'failed');--> statement-breakpoint
 CREATE TYPE "public"."digest_period" AS ENUM('daily', 'weekly');--> statement-breakpoint
@@ -21,10 +21,8 @@ CREATE TABLE "analysis_records" (
 	"keywords" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"entities" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"language" varchar(16),
-	"sentiment" varchar(32),
 	"value_score" integer NOT NULL,
 	"summary" jsonb,
-	"evidence_snippet" text,
 	"original_url" text NOT NULL,
 	"source_name" varchar(255) NOT NULL,
 	"source_trace_id" text,
