@@ -35,7 +35,9 @@ export const defaultGenerateStructuredObject: GenerateStructuredObject = async (
       object: result.output,
     };
   } catch (error) {
-    logger.error("defaultGenerateStructuredObject", { error });
+    logger.error("defaultGenerateStructuredObject", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   }
 };
