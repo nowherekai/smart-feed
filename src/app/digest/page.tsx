@@ -81,17 +81,17 @@ function groupDigestRecords(records: Awaited<ReturnType<typeof getDailyDigestIte
     }
 
     const categories = record.categories.length > 0 ? record.categories : ["未分类"];
+    const uniqueCategories = new Set(categories.map((category) => category.trim() || "未分类"));
 
-    for (const category of categories) {
-      const normalizedCategory = category.trim() || "未分类";
-      const categoryItems = grouped.get(normalizedCategory);
+    for (const category of uniqueCategories) {
+      const categoryItems = grouped.get(category);
 
       if (categoryItems) {
         categoryItems.push(digestRecord);
         continue;
       }
 
-      grouped.set(normalizedCategory, [digestRecord]);
+      grouped.set(category, [digestRecord]);
     }
   }
 
