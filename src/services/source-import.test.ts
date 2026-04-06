@@ -19,6 +19,7 @@ type CreateSourceInput = Parameters<NonNullable<SourceImportDeps["createSource"]
 type EnqueueSourceFetchInput = Parameters<NonNullable<SourceImportDeps["enqueueSourceFetch"]>>[0];
 
 function createImportHarness() {
+  const clearedRunIds: string[] = [];
   const runs: InMemoryRun[] = [];
   const updates: Array<{ id: string; data: UpdateImportRunInput }> = [];
   const items: Array<{
@@ -36,6 +37,7 @@ function createImportHarness() {
   return {
     runs,
     updates,
+    clearedRunIds,
     items,
     enqueued,
     createdSources,
@@ -59,6 +61,15 @@ function createImportHarness() {
           finishedAt: null,
           createdAt: new Date(),
         };
+      },
+      async clearImportRunItems(importRunId: string) {
+        clearedRunIds.push(importRunId);
+
+        for (let index = items.length - 1; index >= 0; index -= 1) {
+          if (items[index]?.importRunId === importRunId) {
+            items.splice(index, 1);
+          }
+        }
       },
       async updateImportRun(id: string, data: UpdateImportRunInput) {
         const run = runs.find((item) => item.id === id);
@@ -239,6 +250,7 @@ test("runSourceImport reuses existing import run id for queued OPML jobs", async
     },
   });
   expect(harness.updates[0]?.data.totalCount).toBeUndefined();
+  expect(harness.clearedRunIds).toEqual(["existing-run"]);
 });
 
 test("runSourceImport treats unique constraint conflicts as skipped duplicates under concurrency", async () => {

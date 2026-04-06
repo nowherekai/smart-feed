@@ -85,6 +85,7 @@ export type SourceImportRunProgress = {
 
 /** 依赖项接口，支持 Mock */
 export type SourceImportDeps = {
+  clearImportRunItems?: (importRunId: string) => Promise<void>;
   createImportRun?: (data: NewSourceImportRun) => Promise<SourceImportRunReference>;
   updateImportRun?: (id: string, data: SourceImportRunUpdate) => Promise<void>;
   createImportRunItem?: (data: NewSourceImportRunItem) => Promise<SourceImportRunItemReference>;
@@ -128,6 +129,11 @@ async function createImportRunItem(data: NewSourceImportRunItem): Promise<Source
   const [item] = await db.insert(sourceImportRunItems).values(data).returning();
 
   return requireInsertedRow(item, "source import run item");
+}
+
+async function clearImportRunItems(importRunId: string): Promise<void> {
+  const db = getDb();
+  await db.delete(sourceImportRunItems).where(eq(sourceImportRunItems.importRunId, importRunId));
 }
 
 /** 为新导入成功的来源入队首次抓取任务 */
@@ -388,6 +394,7 @@ async function persistOutcome(
 /** 注入默认依赖 */
 function buildDeps(overrides: SourceImportDeps): Required<SourceImportDeps> {
   return {
+    clearImportRunItems: overrides.clearImportRunItems ?? clearImportRunItems,
     createImportRun: overrides.createImportRun ?? createImportRun,
     updateImportRun: overrides.updateImportRun ?? updateImportRun,
     createImportRunItem: overrides.createImportRunItem ?? createImportRunItem,
@@ -576,6 +583,7 @@ export async function runSourceImport(
   const runId = input.importRunId ?? crypto.randomUUID();
 
   if (input.importRunId) {
+    await deps.clearImportRunItems(runId);
     await deps.updateImportRun(runId, {
       createdCount: 0,
       skippedCount: 0,
