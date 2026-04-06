@@ -40,24 +40,28 @@ export default function DailyDigestPage() {
 }
 
 async function DailyDigestSections() {
-  const analysisRecords = await getDailyDigestItems();
-  const groupedCategories = groupDigestRecords(analysisRecords);
+  const records = await getDailyDigestItems();
+  const groupedCategories = groupDigestRecords(records);
 
-  return groupedCategories.length === 0 ? (
-    <div className="text-center py-12 text-muted-foreground">
-      No digest generated yet. Wait for the scheduled task or trigger manually.
-    </div>
-  ) : (
+  if (groupedCategories.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        No digest generated yet. Wait for the scheduled task or trigger manually.
+      </div>
+    );
+  }
+
+  return (
     <div className="space-y-16">
       {groupedCategories.map(({ category, items }) => (
         <section key={category} className="space-y-8">
           <div className="flex items-center gap-4">
-            <h4 className="text-lg font-bold uppercase tracking-widest text-primary shrink-0">{category}</h4>
+            <h4 className="shrink-0 text-lg font-bold uppercase tracking-widest text-primary">{category}</h4>
             <Separator className="flex-1" />
           </div>
           <div className="space-y-8">
             {items.map((item) => (
-              <DigestItem key={item.id} record={item} />
+              <DigestItem key={`${category}-${item.id}`} record={item} />
             ))}
           </div>
         </section>
@@ -67,27 +71,31 @@ async function DailyDigestSections() {
 }
 
 function groupDigestRecords(records: Awaited<ReturnType<typeof getDailyDigestItems>>) {
-  const map = new Map<string, NonNullable<ReturnType<typeof toDigestItemRecord>>[]>();
+  const grouped = new Map<string, NonNullable<ReturnType<typeof toDigestItemRecord>>[]>();
 
   for (const record of records) {
     const digestRecord = toDigestItemRecord(record);
-    if (!digestRecord || record.categories.length === 0) {
+
+    if (!digestRecord) {
       continue;
     }
 
-    for (const category of record.categories) {
-      const categoryItems = map.get(category);
+    const categories = record.categories.length > 0 ? record.categories : ["未分类"];
+
+    for (const category of categories) {
+      const normalizedCategory = category.trim() || "未分类";
+      const categoryItems = grouped.get(normalizedCategory);
 
       if (categoryItems) {
         categoryItems.push(digestRecord);
         continue;
       }
 
-      map.set(category, [digestRecord]);
+      grouped.set(normalizedCategory, [digestRecord]);
     }
   }
 
-  return Array.from(map.entries()).map(([category, items]) => ({
+  return Array.from(grouped.entries()).map(([category, items]) => ({
     category,
     items,
   }));

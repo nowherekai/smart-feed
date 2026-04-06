@@ -1,6 +1,6 @@
 "use server";
 
-import { desc, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { type AnalysisRecord, analysisRecords } from "@/db/schema";
 
@@ -13,10 +13,10 @@ export async function getTopIntelligence(): Promise<AnalysisRecord[]> {
 }
 
 export async function getDailyDigestItems(): Promise<AnalysisRecord[]> {
-  // Typical dashboard digest might show records in the latest window that are high value.
+  // 只获取完整分析(status=full)的记录，按价值评分和时间排序
   return await db.query.analysisRecords.findMany({
-    where: isNotNull(analysisRecords.summary),
-    orderBy: [desc(analysisRecords.createdAt), desc(analysisRecords.valueScore)],
+    where: and(eq(analysisRecords.status, "full"), isNotNull(analysisRecords.summary)),
+    orderBy: [desc(analysisRecords.valueScore), desc(analysisRecords.createdAt)],
     limit: 50,
   });
 }
