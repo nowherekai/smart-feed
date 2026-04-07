@@ -173,7 +173,7 @@ export function StatsClient({ data }: { data: StatsPageData }) {
           <MetricCard
             title="已入 Digest"
             value={formatCount(data.overview.digestedContents)}
-            description="状态为 digested 的文章。"
+            description="已收录至每日摘要的内容。"
             icon={<FolderKanban className="size-4" />}
           />
           <MetricCard
