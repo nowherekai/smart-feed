@@ -40,7 +40,7 @@ export default function DailyDigestPage() {
 
 async function DailyDigestSections() {
   const records = await getDailyDigestItems();
-  const digestRecords = records.map(toDigestItemRecord).filter((record) => record !== null);
+  const digestRecords = records.flatMap((record) => toDigestItemRecord(record) ?? []);
 
   if (digestRecords.length === 0) {
     return (
