@@ -157,12 +157,20 @@ export function getOpsRangeWindow(range: OpsRange, now = new Date(), timeZone = 
   };
 }
 
-function getRunWindowFilter(column: SQL<unknown>, window: OpsRangeWindow) {
+function getRunWindowFilter(startedColumn: SQL<unknown>, fallbackColumn: SQL<unknown>, window: OpsRangeWindow) {
   if (window.windowStart) {
-    return sql`${column} >= ${window.windowStart.toISOString()} AND ${column} < ${window.windowEnd.toISOString()}`;
+    return sql`(
+      (${startedColumn} IS NOT NULL AND ${startedColumn} >= ${window.windowStart.toISOString()} AND ${startedColumn} < ${window.windowEnd.toISOString()})
+      OR
+      (${startedColumn} IS NULL AND ${fallbackColumn} >= ${window.windowStart.toISOString()} AND ${fallbackColumn} < ${window.windowEnd.toISOString()})
+    )`;
   }
 
-  return sql`${column} < ${window.windowEnd.toISOString()}`;
+  return sql`(
+    (${startedColumn} IS NOT NULL AND ${startedColumn} < ${window.windowEnd.toISOString()})
+    OR
+    (${startedColumn} IS NULL AND ${fallbackColumn} < ${window.windowEnd.toISOString()})
+  )`;
 }
 
 function parseCount(value: number | string | null | undefined): number {
@@ -275,7 +283,7 @@ function createOpsInsightsQueryDeps(): OpsInsightsQueryDeps {
               ELSE NULL
             END AS duration_ms
           FROM pipeline_runs
-          WHERE ${getRunWindowFilter(sql`COALESCE(started_at, created_at)`, window)}
+          WHERE ${getRunWindowFilter(sql`started_at`, sql`created_at`, window)}
         )
         SELECT
           COUNT(*)::int AS total_runs,
@@ -322,7 +330,7 @@ function createOpsInsightsQueryDeps(): OpsInsightsQueryDeps {
               ELSE NULL
             END AS duration_ms
           FROM pipeline_runs
-          WHERE ${getRunWindowFilter(sql`COALESCE(started_at, created_at)`, window)}
+          WHERE ${getRunWindowFilter(sql`started_at`, sql`created_at`, window)}
         )
         SELECT
           pipeline_name,
@@ -373,7 +381,7 @@ function createOpsInsightsQueryDeps(): OpsInsightsQueryDeps {
             END AS duration_ms
           FROM step_runs sr
           INNER JOIN pipeline_runs pr ON pr.id = sr.pipeline_run_id
-          WHERE ${getRunWindowFilter(sql`COALESCE(sr.started_at, sr.created_at)`, window)}
+          WHERE ${getRunWindowFilter(sql`sr.started_at`, sql`sr.created_at`, window)}
         )
         SELECT
           pipeline_name,
@@ -438,7 +446,7 @@ function createOpsInsightsQueryDeps(): OpsInsightsQueryDeps {
           FROM step_runs sr
           INNER JOIN pipeline_runs pr ON pr.id = sr.pipeline_run_id
           WHERE sr.status = 'failed'
-            AND ${getRunWindowFilter(sql`COALESCE(sr.started_at, sr.created_at)`, window)}
+            AND ${getRunWindowFilter(sql`sr.started_at`, sql`sr.created_at`, window)}
         ),
         failed_pipeline_runs AS (
           SELECT
@@ -461,7 +469,7 @@ function createOpsInsightsQueryDeps(): OpsInsightsQueryDeps {
             END AS duration_ms
           FROM pipeline_runs pr
           WHERE pr.status = 'failed'
-            AND ${getRunWindowFilter(sql`COALESCE(pr.started_at, pr.created_at)`, window)}
+            AND ${getRunWindowFilter(sql`pr.started_at`, sql`pr.created_at`, window)}
             AND NOT EXISTS (
               SELECT 1
               FROM step_runs sr
