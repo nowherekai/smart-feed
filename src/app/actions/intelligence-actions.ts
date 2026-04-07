@@ -1,6 +1,8 @@
 "use server";
 
 import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { loadAnalysisFeed } from "@/app/analysis/query";
+import type { AnalysisPageData, AnalysisSearchParams } from "@/app/analysis/types";
 import { db } from "@/db";
 import { type AnalysisRecord, analysisRecords } from "@/db/schema";
 import { createLogger } from "@/utils/logger";
@@ -35,4 +37,11 @@ export async function getDailyDigestItems(): Promise<AnalysisRecord[]> {
     });
     throw error;
   }
+}
+
+/**
+ * 获取分析记录分页数据（按 content_id 去重、优先 full 状态）
+ */
+export async function getAnalysisFeed(input: AnalysisSearchParams): Promise<AnalysisPageData> {
+  return await loadAnalysisFeed(input);
 }
