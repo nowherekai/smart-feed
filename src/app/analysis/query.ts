@@ -62,8 +62,9 @@ type DeduplicatedRow = {
  */
 async function countDeduplicatedRecords(): Promise<number> {
   const result = await db.execute<{ count: string }>(sql`
-    SELECT count(*) as count
-    FROM (${deduplicatedSubquery}) AS deduped
+    SELECT count(DISTINCT content_id) as count
+    FROM analysis_records
+    WHERE summary IS NOT NULL
   `);
 
   // db.execute 返回 RowList（类数组），直接按索引访问
