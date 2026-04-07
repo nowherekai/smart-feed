@@ -35,6 +35,7 @@
 | [027](changes/arch/027_opml-import-background-runtime-and-concurrency.md) | 2026-04-06 | OPML 导入后台化与受控并发收口 |
 | [028](changes/arch/028_analysis-feed-page-and-navigation.md) | 2026-04-07 | Analysis 页面与情报列表导航 |
 | [029](changes/arch/029_stats-mvp-page-and-query-layer.md) | 2026-04-07 | Stats MVP 页面与查询层 |
+| [030](changes/arch/030_sources-page-rss-opml-export.md) | 2026-04-07 | Sources 页面全量 RSS OPML 导出 |
 
 ### 运维变更
 

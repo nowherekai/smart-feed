@@ -1,6 +1,6 @@
 "use client";
 
-import { FileUp, Trash2, X } from "lucide-react";
+import { Download, FileUp, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   type ChangeEvent,
@@ -37,7 +37,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button-variants";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -468,6 +469,12 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
     <div className="p-8 max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-2">
       <Card className="border-border">
         <CardHeader>
+          <CardAction>
+            <a href="/sources/export" className={buttonVariants({ size: "sm", variant: "outline" })}>
+              <Download size={14} />
+              导出 OPML
+            </a>
+          </CardAction>
           <CardTitle>Manage Sources</CardTitle>
           <CardDescription>添加单个 RSS，或通过 OPML 批量导入现有订阅清单。</CardDescription>
         </CardHeader>
