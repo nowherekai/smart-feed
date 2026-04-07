@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, LayoutDashboard, Newspaper, Rss, Settings, Zap } from "lucide-react";
+import { Brain, FileText, LayoutDashboard, Newspaper, Rss, Settings, Zap } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -19,6 +19,7 @@ export function Sidebar() {
       <nav className="flex-1 px-4 space-y-1">
         <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" href="/" active={pathname === "/"} />
         <NavItem icon={<FileText size={20} />} label="Daily Digest" href="/digest" active={pathname === "/digest"} />
+        <NavItem icon={<Brain size={20} />} label="Analysis" href="/analysis" active={pathname === "/analysis"} />
         <NavItem
           icon={<Newspaper size={20} />}
           label="Original Feeds"

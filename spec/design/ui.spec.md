@@ -17,6 +17,7 @@
 当前规格覆盖的核心页面：
 - `/` Dashboard
 - `/digest` Daily Digest
+- `/analysis` Analysis
 - `/original-content` Original Feeds
 - `/sources` Sources
 - `/settings` Settings
@@ -33,18 +34,21 @@
 ### 2.2 当前导航结构
 - `Dashboard`
 - `Daily Digest`
+- `Analysis`
 - `Original Feeds`
 - `Sources`
 - `Settings`
 
 说明：
 - `Dashboard` 是当前默认首页。
+- `Analysis` 为情报分析浏览器，展示所有已生成的 AI 分析记录（按 content_id 去重、分页）。
 - 当前代码中**没有** `Archive` 页面，也没有历史日报导航入口。
 - `Original Feeds` 是原始抓取内容时间流页面，名称已固定，不再使用 `Original Content`。
 
 ### 2.3 页面标题映射
 - `/` → `Dashboard`
 - `/digest` → `Daily Digest`
+- `/analysis` → `Analysis`
 - `/original-content` → `Original Feeds`
 - `/sources` → `Sources`
 - `/settings` → `Settings`
@@ -71,6 +75,7 @@
 ### 3.4 内容区宽度
 - `Dashboard` / `Sources` / `Settings`：主内容容器约 `max-w-5xl`
 - `Daily Digest`：主内容容器约 `max-w-4xl`
+- `Analysis`：主内容容器约 `max-w-5xl`
 - `Original Feeds`：主内容容器约 `max-w-6xl`
 
 ---
@@ -244,6 +249,42 @@ OPML 导入：
 说明：
 - 当前页面仍包含说明性 `CardDescription`，这是已有实现现状，不代表新页面应继续沿用同样策略。
 
+### 5.6 Analysis (`/analysis`)
+
+用途：
+- 浏览所有已生成的 AI 分析记录，按 content_id 去重，优先展示完整分析(full)。
+
+结构：
+- 顶部标题 `Analysis`
+- 下方为单列卡片列表
+- 底部分页控件
+
+数据来源：
+- `getAnalysisFeed()`
+
+去重逻辑：
+- 同一 `content_id` 仅展示一条记录
+- 优先 `status = 'full'`，其次按 `created_at` 降序
+- 仅展示 `summary IS NOT NULL` 的记录
+
+排序：
+- 去重后按 `value_score DESC, created_at DESC` 排序
+
+分页：
+- 默认每页 20 条
+- 分页控件位于列表底部
+
+卡片内容：
+- 分类 Badge
+- 价值评分
+- 摘要首句
+- 来源名称
+- 段落摘要列表
+- 原文链接按钮
+
+空状态：
+- `No analysis records yet.`
+
 ---
 
 ## 6. 组件与交互模式
@@ -320,11 +361,14 @@ OPML 导入：
 
 ## 10. 验收检查清单
 
-- [ ] Sidebar 是否包含 `Dashboard / Daily Digest / Original Feeds / Sources / Settings`
+- [ ] Sidebar 是否包含 `Dashboard / Daily Digest / Analysis / Original Feeds / Sources / Settings`
+- [ ] `/analysis` 页标题是否为 `Analysis`
+- [ ] `/analysis` 是否按 content_id 去重且优先 full 状态
+- [ ] `/analysis` 是否默认每页 `20` 条，且分页位于列表底部
 - [ ] `/original-content` 页标题是否为 `Original Feeds`
 - [ ] `/original-content` 页面是否没有额外解释性副标题
 - [ ] `Original Feeds` 的时间筛选是否包含 `All Time / Today / Last 2 Days / Last Week`
-- [ ] `Original Feeds` 的来源筛选是否为“前端搜索 + 单选 + 可清除”
+- [ ] `Original Feeds` 的来源筛选是否为"前端搜索 + 单选 + 可清除"
 - [ ] `Original Feeds` 是否按时间倒序展示，且分页位于列表底部
 - [ ] `Original Feeds` 是否默认每页 `100` 条
 - [ ] `Original Feeds` 卡片是否只展示必要信息，不渲染原始 HTML

@@ -8,6 +8,7 @@ import { buttonVariants } from "@/components/ui/button-variants";
 const TITLE_BY_PATH: Record<string, string> = {
   "/": "Dashboard",
   "/digest": "Daily Digest",
+  "/analysis": "Analysis",
   "/original-content": "Original Feeds",
   "/sources": "Sources",
   "/settings": "Settings",
