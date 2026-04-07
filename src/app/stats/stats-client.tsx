@@ -202,7 +202,7 @@ export function StatsClient({ data }: { data: StatsPageData }) {
           <Card className="border-border/80 bg-card/80">
             <CardHeader className="space-y-2">
               <CardTitle>内容漏斗</CardTitle>
-              <p className="text-sm text-muted-foreground">基于 content_items.status 统计处理阶段。</p>
+              <p className="text-sm text-muted-foreground">展示内容从入库到分发的完整处理流程。</p>
             </CardHeader>
             <CardContent className="space-y-4">
               {data.funnel.map((step) => (
