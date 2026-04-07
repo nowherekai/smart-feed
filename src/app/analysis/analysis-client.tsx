@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, ExternalLink, Zap } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 import type { AnalysisListItem, AnalysisPageData } from "@/app/analysis/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -83,13 +84,21 @@ function AnalysisCard({ item }: { item: AnalysisListItem }) {
 export function AnalysisClient({ data }: { data: AnalysisPageData }) {
   const router = useRouter();
   const pathname = usePathname();
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const viewport = contentRef.current?.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
+    if (viewport) {
+      viewport.scrollTop = 0;
+    }
+  }, [data.page]);
 
   function updatePage(page: number) {
     router.replace(buildAnalysisUrl(page, pathname), { scroll: false });
   }
 
   return (
-    <div className="p-8">
+    <div ref={contentRef} className="p-8">
       <div className="mx-auto flex max-w-5xl flex-col gap-8">
         <div className="space-y-1">
           <h3 className="text-4xl font-bold tracking-tight text-foreground">Analysis</h3>
