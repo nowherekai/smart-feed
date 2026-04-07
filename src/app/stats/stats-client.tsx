@@ -179,7 +179,7 @@ export function StatsClient({ data }: { data: StatsPageData }) {
           <MetricCard
             title="高价值文章"
             value={`${formatCount(data.overview.highValueContents)} · ${formatRatio(data.overview.highValueRatio)}`}
-            description="按去重分析记录统计 valueScore >= 7。"
+            description="基于 AI 评分筛选出的高价值内容。"
             icon={<Sparkles className="size-4" />}
           />
           <MetricCard
