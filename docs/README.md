@@ -36,6 +36,7 @@
 | [028](changes/arch/028_analysis-feed-page-and-navigation.md) | 2026-04-07 | Analysis 页面与情报列表导航 |
 | [029](changes/arch/029_stats-mvp-page-and-query-layer.md) | 2026-04-07 | Stats MVP 页面与查询层 |
 | [030](changes/arch/030_sources-page-rss-opml-export.md) | 2026-04-07 | Sources 页面全量 RSS OPML 导出 |
+| [031](changes/arch/031_ops-insights-admin-page.md) | 2026-04-07 | Ops Insights 管理页与运行聚合视图 |
 
 ### 运维变更
 

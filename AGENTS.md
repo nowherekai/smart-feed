@@ -20,7 +20,9 @@
 6. 即使只是 review feedback 导致的小幅 schema 调整（如索引、约束、表名、列默认值），也必须新增 forward-only migration，禁止通过重生成、覆盖或改名旧 migration 来“整理历史”。
 7. UI 组件默认不要展示面向用户的实现性说明文案，例如“支持按账户、交易所、状态、币种和时间范围筛选，并可下钻到对应账户详情”或 “Chronological feed of all synced articles” 这类功能解释；界面应尽量简洁，只保留必要的信息层级与操作提示。除非用户明确要求，否则不要额外添加副标题式说明、功能概述或实现解释。
 8. 数据库中默认是UTC时间（或unix时间戳）, 前端显示和业务（比如按天统计）都用配置的时区
-9. 不需要检查 next-env.d.ts
+9. 使用 `db.execute(sql\`\`)` 写原生 SQL 时，不要把 `Date` 实例直接作为参数传入；统一先转成 ISO 字符串（例如 `date.toISOString()`），避免 postgres 驱动在运行时报 `The "string" argument must be of type string or an instance of Buffer or ArrayBuffer. Received an instance of Date`。
+10. Server Component 传给 Client Component 的时间字段会被序列化成字符串；客户端消费日期时要兼容 `string`，不要假设仍然是 `Date` 实例。
+11. 不需要检查 next-env.d.ts
 
 
 ### Git 工作流
