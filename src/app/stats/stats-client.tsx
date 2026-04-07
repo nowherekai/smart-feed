@@ -167,7 +167,7 @@ export function StatsClient({ data }: { data: StatsPageData }) {
           <MetricCard
             title="已分析"
             value={formatCount(data.overview.analyzedContents)}
-            description="状态为 analyzed 或 digested 的文章。"
+            description="已完成深度分析的内容。"
             icon={<TrendingUp className="size-4" />}
           />
           <MetricCard
