@@ -259,7 +259,7 @@ export function StatsClient({ data }: { data: StatsPageData }) {
           <Card className="border-border/80 bg-card/80">
             <CardHeader className="space-y-2">
               <CardTitle>趋势</CardTitle>
-              <p className="text-sm text-muted-foreground">新增文章与完成分析按当前范围分桶展示。</p>
+              <p className="text-sm text-muted-foreground">展示新增文章与分析完成情况的变动趋势。</p>
             </CardHeader>
             <CardContent>
               <TrendChart points={data.trends} />
