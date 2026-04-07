@@ -1,9 +1,10 @@
 # smart-feed 系统架构文档
 
-**项目名称**: smart-feed
-**版本**: 0.3
-**创建日期**: 2026-04-01
-**文档状态**: Ready for Implementation (Updated for Multi-Worker Refactor)
+**项目名称**: smart-feed  
+**版本**: 0.4  
+**创建日期**: 2026-04-01  
+**更新时间**: 2026-04-07  
+**文档状态**: Synced to Current Code
 
 ---
 
@@ -11,197 +12,363 @@
 
 ### 1.1 系统定位
 
-smart-feed 是一个个人情报处理系统，将用户配置的 RSS 订阅源转化为每日智能编排的摘要。
+smart-feed 当前是一个 **Next.js Web + BullMQ Worker + PostgreSQL + Redis** 的单体系统，面向单用户 RSS 情报处理场景。它既提供 Web 工作台，也提供后台定时与异步流水线。
 
-### 1.2 核心设计原则
+### 1.2 当前运行形态
 
-1. **后台异步优先** - 抓取、分析、编排均在后台完成，Web 层仅负责配置与展示
-2. **数据分离** - 原始数据与加工数据分表存储，支持重新处理
-3. **可回链阅读** - 所有摘要结果必须保留来源名称与原文链接
-4. **规则优先，AI 补洞** - 去重、过滤用规则，分类、摘要用 AI
-5. **轻模型前置，重模型后置** - 先筛选后深度分析，控制成本
-6. **模块解耦** - 前台、调度、Worker、AI 层、数据层清晰分离
+- **Web 进程**: Next.js App Router，承担页面渲染、Server Actions、一个 OPML 导出 Route Handler。
+- **Worker 进程**: Bun 启动的 BullMQ Worker 集群入口，负责调度注册、队列消费、bull-board 服务。
+- **数据库**: PostgreSQL，统一由 Drizzle ORM 访问。
+- **队列**: Redis + BullMQ，承载内容流水线、Digest 流水线与来源导入任务。
 
-### 1.3 技术栈
+### 1.3 核心设计原则
 
-| 层级 | 技术选型 | 说明 |
-|------|---------|------|
-| **Web 框架** | Next.js | 全栈框架，支持 SSR/server actions/API Routes |
-| **样式** | Tailwind CSS | 实用优先的 CSS 框架 |
-| **UI 组件** | shadcn/ui | 可组合的 React 组件库 |
-| **包管理** | Bun | 快速的 JavaScript 运行时与包管理器 |
-| **数据库** | PostgreSQL | 本地开发用本地实例，生产用 Neon |
-| **ORM** | Drizzle ORM | 类型安全的 TypeScript ORM |
-| **任务队列** | BullMQ + Redis | 基于 Redis 的任务队列与调度 |
-| **队列管理** | bull-board | 队列、重试、失败任务的可视化管理界面 |
-| **AI 适配** | Vercel AI SDK | 统一的 LLM 接口抽象层 |
+1. **Web 读写分离偏后台**: Web 主要负责配置、查询和触发动作，长耗时工作全部走 Worker。
+2. **流水线状态显式化**: 通过 `content_items.status`、`digest_reports.status`、`pipeline_runs`、`step_runs` 保持过程可审计。
+3. **原始层与加工层分离**: `content_item_raws` 保留原始正文，`content_items.cleaned_md` 保存标准化结果。
+4. **规则优先于 AI**: 去重、时间窗口、状态推进先由规则决定，AI 只负责分类、评分和摘要。
+5. **缓存优先**: AI 结果按 `(content_id, model_strategy, prompt_version)` 缓存。
+6. **失败可降级**: 全文抓取失败时，若 RSS 原始内容可用，允许 fallback 继续处理。
+7. **运维可观测**: bull-board、结构化日志、内容详情页运行轨迹共同构成观测面。
+
+### 1.4 技术栈
+
+| 层级 | 技术选型 | 当前用途 |
+|------|---------|---------|
+| Web 框架 | Next.js 16 + React 19 | App Router 页面、Server Actions、Route Handler |
+| UI | Tailwind CSS 4 + shadcn/ui + Zustand | 前端页面与交互状态 |
+| 运行时 | Bun | 本地开发、测试、worker 启动 |
+| 数据库 | PostgreSQL | 业务数据、流水线审计数据 |
+| ORM | Drizzle ORM | 类型安全数据库访问 |
+| 队列 | BullMQ + Redis | 异步任务、调度、重试 |
+| 监控入口 | bull-board + Express | worker 侧队列观测 |
+| AI | AI SDK + OpenRouter Provider + Dummy Provider | 基础分析与深度摘要 |
+| 邮件 | Nodemailer + SMTP | Digest 邮件投递 |
+| 解析 | rss-parser + fast-xml-parser + linkedom + turndown | RSS/OPML 解析、HTML 抓取、Markdown 标准化 |
 
 ---
 
 ## 2. 系统架构
 
-### 2.1 架构图
+### 2.1 逻辑架构图
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                      Next.js Web                        │
-│      来源管理 / Digest 查看 / 反馈 / bull-board 管理      │
-└────────────────────────┬────────────────────────────────┘
-                         │ HTTP/API
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│                   Application Layer                     │
-│              API Routes / Business Logic                │
-└───────┬─────────────────────────────────────────┬───────┘
-        │                                         │
-        ▼                                         ▼
-┌──────────────────┐                    ┌─────────────────┐
-│   PostgreSQL     │                    │   Redis +       │
-│  数据持久化层     │                    │    BullMQ       │
-└──────────────────┘                    │  任务队列/调度    │
-        ▲                               └────────┬────────┘
-        │                                        │
-        │                                        ▼
-        │                              ┌─────────────────┐
-        │                              │  Worker Pool    │
-        │                              │  (Multi-Queue)  │
-        │                              └────────┬────────┘
-        │                                       │
-        └───────────────────────────────────────┘
-                         
-┌─────────────────────────────────────────────────────────┐
-│                   External Systems                      │
-│            RSS Feeds / LLM APIs / SMTP                  │
-└─────────────────────────────────────────────────────────┘
+```text
+┌──────────────────────────────────────────────────────┐
+│                   Next.js Web App                    │
+│ Dashboard / Sources / Analysis / Digest / Stats /   │
+│ Original Content / Settings(placeholder)            │
+└──────────────────────────┬───────────────────────────┘
+                           │
+                           │ Server Actions / Queries
+                           ▼
+┌──────────────────────────────────────────────────────┐
+│                Application / Query Layer            │
+│ source-actions / intelligence-actions /             │
+│ original-content-actions / content-debug-actions    │
+└───────────────┬───────────────────────┬─────────────┘
+                │                       │
+                ▼                       ▼
+┌──────────────────────────┐  ┌──────────────────────────┐
+│      PostgreSQL          │  │      Redis + BullMQ      │
+│ sources / content /      │  │ queues / schedulers /    │
+│ analysis / digest / runs │  │ deduplication / retries  │
+└───────────────▲──────────┘  └───────────────┬──────────┘
+                │                             │
+                │                             ▼
+                │                 ┌────────────────────────┐
+                │                 │      Worker App        │
+                │                 │ source / content / ai /│
+                │                 │ digest / legacy import │
+                │                 └───────────┬────────────┘
+                │                             │
+                ▼                             ▼
+┌──────────────────────────────────────────────────────┐
+│                 External Dependencies                │
+│ RSS Feeds / Original Pages / OpenRouter / SMTP      │
+└──────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 核心子系统
 
-#### 2.2.1 Web 层
-- **职责**: 来源配置、状态查询、Digest 展示、反馈收集
-- **技术**: Next.js App Router + React Server Components
-- **不负责**: 长时间抓取、AI 调用、定时任务
+#### 2.2.1 Web 展示层
+- **职责**: 页面渲染、用户交互、只读查询结果展示。
+- **目录**: `src/app/*`、`src/components/*`
+- **当前页面**:
+  - `/`
+  - `/sources`
+  - `/original-content`
+  - `/original-content/[contentId]`
+  - `/analysis`
+  - `/digest`
+  - `/stats`
+  - `/settings`
+- **当前占位**:
+  - `src/app/api/.gitkeep`
+  - `src/app/admin/.gitkeep`
+  - `src/app/digest/.gitkeep` 目录存在但页面由 `page.tsx` 承担
 
-#### 2.2.2 API 层
-- **职责**: 业务逻辑封装、数据验证、任务入队
-- **实现**: Next.js API Routes
-- **关键接口**: 来源管理、Digest 查询、反馈提交
+#### 2.2.2 应用动作与查询层
+- **职责**: 连接前端与数据库/队列。
+- **主要模块**:
+  - `src/app/actions/source-actions.ts`
+  - `src/app/actions/intelligence-actions.ts`
+  - `src/app/actions/original-content-actions.ts`
+  - `src/app/actions/content-debug-actions.ts`
+  - `src/app/sources/export/route.ts`
+- **当前边界特征**:
+  - 主业务不是 API Routes 驱动，而是 Server Actions + 直接查询模块。
+  - 唯一稳定 HTTP 接口是 OPML 导出 Route Handler。
 
-#### 2.2.3 调度层
-- **职责**: 定时触发抓取信息与 Digest 生成
-- **实现**: BullMQ repeatable jobs，跨队列路由到 `source-dispatch-queue` 和 `digest-queue`
-- **触发规则**:
-  - RSS 调度扫描: 每小时，运行在 `source-dispatch-queue`
-  - Digest 生成: 每日 Digest 业务时区本地 08:00，运行在 `digest-queue`
+#### 2.2.3 后台调度层
+- **职责**: 注册周期任务，不直接执行业务。
+- **实现**: `src/scheduler/jobs.ts`
+- **当前任务**:
+  - 每小时 `scheduler.sources.sync`，队列 `source-dispatch-queue`
+  - 每日 `digest.compose`，队列 `digest-queue`
 
-#### 2.2.4 Worker 层
-- **职责**: 执行 Pipeline 各阶段任务，按职能隔离队列与 Worker
-- **实现**: 5 个独立职能队列及其对应的 Worker 实例
-  - `source-dispatch-queue`: 扫描待同步源并扇出任务
-  - `ingestion-queue`: RSS 抓取与初步入库
-  - `content-queue`: HTML 抓取与正文提取转换
-  - `ai-queue`: AI 评分与深度分析
-  - `digest-queue`: 简报编排与邮件投递
-- **特性**: 幂等、可重试、队列级并发控制（Concurrency）
+#### 2.2.4 Worker 执行层
+- **职责**: 消费队列并执行业务处理器。
+- **入口**: `src/workers/index.ts`
+- **当前 Worker 切分**:
+  - `source-dispatch-queue`
+  - `ingestion-queue`
+  - `content-queue`
+  - `ai-queue`
+  - `digest-queue`
+  - legacy queue `smart-feed`（仅 `source.import`）
 
-#### 2.2.5 AI 适配层
-- **职责**: 统一 LLM 调用接口
-- **实现**: Vercel AI SDK
-- **策略**: 轻模型筛选 + 重模型摘要
+#### 2.2.5 内容服务层
+- **职责**: 来源抓取、去重、时间窗口判定、全文抓取、标准化。
+- **核心模块**:
+  - `src/services/source.ts`
+  - `src/services/source-import.ts`
+  - `src/services/content.ts`
+  - `src/services/html-fetcher.ts`
+  - `src/services/normalizer.ts`
 
-#### 2.2.6 队列管理层
-- **职责**: 查看队列积压、失败任务、重试状态与运行健康度
-- **实现**: bull-board，运行在 worker 进程独立端口，挂载全部 5 个职能队列，路径为 `/admin/queues`
-- **约束**: 仅单用户或内部管理员可访问，不对公网匿名开放
+#### 2.2.6 AI 服务层
+- **职责**: Provider 选择、Prompt 管理、基础分析、深度摘要。
+- **核心模块**:
+  - `src/ai/client.ts`
+  - `src/ai/prompts.ts`
+  - `src/services/analysis.ts`
+- **运行模式**:
+  - `disabled`
+  - `dummy`
+  - `openrouter`
+
+#### 2.2.7 Digest 服务层
+- **职责**: 计算窗口、筛选候选、渲染 Markdown、持久化日报、邮件投递。
+- **核心模块**:
+  - `src/services/digest.ts`
+  - `src/services/digest-renderer.ts`
+  - `src/services/digest-delivery.ts`
+
+#### 2.2.8 观测与调试层
+- **职责**: 队列监控、步骤追踪、内容级调试动作。
+- **核心模块**:
+  - `src/workers/bull-board.ts`
+  - `src/services/pipeline-tracking.ts`
+  - `src/services/pipeline-runtime.ts`
+  - `src/services/digest-pipeline-runtime.ts`
+  - `src/app/original-content/[contentId]/content-detail-actions.tsx`
 
 ---
 
-## 3. 数据架构
+## 3. 当前目录与边界
 
-命名约定：`id` / `source_id` / `content_id` / `digest_id` 等字段始终表示内部 UUID 或外键；`source_trace_id` / `content_trace_id` 表示面向用户展示与追踪的业务标识，可由业务字段派生，MVP 不要求单独持久化。
+### 3.1 关键目录
 
-### 3.1 核心实体模型
+```text
+src/
+├── ai/                # AI provider / prompt / schema / repair
+├── app/               # Next.js 页面、Server Actions、Route Handler
+├── components/        # UI 与 feature 组件
+├── config/            # 应用环境变量
+├── db/                # Drizzle client / schema / env
+├── lib/               # 调试辅助、OPML 导出等
+├── parsers/           # RSS / OPML 解析
+├── pipeline/          # BullMQ handler 聚合与类型
+├── queue/             # 队列配置、连接、环境
+├── scheduler/         # Repeatable Job 注册
+├── services/          # 业务核心逻辑
+├── utils/             # logger、time、url 等工具
+└── workers/           # Worker 入口与 bull-board
+```
+
+### 3.2 当前页面读模型
+
+| 页面 | 主要数据来源 | 说明 |
+|------|-------------|------|
+| `/` | `analysis_records` | 只读 Top Intelligence 卡片 |
+| `/sources` | `sources` + import runs | 来源管理与导入状态 |
+| `/analysis` | `analysis_records` 去重查询 | 优先 full 的分析列表 |
+| `/original-content` | `content_items + content_item_raws + sources` | 原始内容时间流 |
+| `/original-content/[contentId]` | `content + raw + analysis + pipeline + digest relations` | 最完整的追踪视图 |
+| `/digest` | `analysis_records(status=full)` | Web 摘要快照，不直接读取 `digest_reports` |
+| `/stats` | 聚合 SQL | 漏斗、趋势、来源统计 |
+| `/settings` | 无后端数据写入 | 当前静态占位 |
+
+---
+
+## 4. 数据架构
+
+### 4.1 核心实体模型
 
 ```typescript
-// 信息源
 interface Source {
-  id: string;                    // UUID
-  type: "rss-source";            // MVP 仅支持 RSS
-  identifier: string;            // 规范化 URL
-  title?: string;                // 来源标题
+  id: string;
+  type: "rss-source" | "podcast-source" | "newsletter-source" | "wechat-source" | "youtube-source";
+  identifier: string;
+  title: string | null;
+  siteUrl: string | null;
   status: "active" | "paused" | "blocked";
-  weight: number;                // 权重，默认 1.0
-  last_successful_sync_at: Date | null; // 最近一次同步成功时间（调度过滤依据）
-  last_polled_at: Date | null;    // 最近一次尝试抓取时间（仅供观测）
-  created_at: Date;
-  updated_at: Date;
+  weight: number;
+  syncCursor: SourceSyncCursor | null;
+  firstImportedAt: Date | null;
+  lastPolledAt: Date | null;
+  lastSuccessfulSyncAt: Date | null;
+  lastErrorAt: Date | null;
+  lastErrorMessage: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-// 内容单元
 interface ContentItem {
-  id: string;                    // UUID
-  source_id: string;             // 关联 Source
-  external_id?: string;          // RSS GUID，缺失或不稳定时回退 URL 级去重
-  title: string;
-  author?: string;
-  raw_body: string;              // 原始 HTML
-  cleaned_md: string | null;     // 清洗后 Markdown
-  original_url: string;
-  normalized_original_url?: string; // 规范化后的原文链接
-  original_url_hash?: string;    // 链接哈希，用于 URL 级去重回退
-  published_at?: Date;           // 原文发布时间，缺失时回退 fetched_at
-  fetched_at: Date;              // 系统抓取时间
-  status: "raw" | "normalized" | "analyzed" | "digested" | "failed";
+  id: string;
+  sourceId: string;
+  kind: "article" | "video-transcript" | "podcast-transcript" | "newsletter";
+  status: "sentinel" | "raw" | "normalized" | "analyzed" | "digested" | "failed";
+  externalId: string | null;
+  title: string | null;
+  author: string | null;
+  originalUrl: string;
+  normalizedOriginalUrl: string | null;
+  originalUrlHash: string | null;
+  mediaUrl: string | null;
+  cleanedMd: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  effectiveAt: Date;
+  processingError: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-// 分析记录
+interface ContentItemRaw {
+  id: string;
+  contentId: string;
+  format: "html" | "text" | "markdown" | "transcript";
+  rawBody: string;
+  rawExcerpt: string | null;
+  rawPayload: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 interface AnalysisRecord {
   id: string;
-  content_id: string;
-  model_strategy: string;        // 如 "haiku-basic"
-  prompt_version: string;        // 提示词版本
-  category: string[];            // 分类标签
+  contentId: string;
+  sourceId: string;
+  modelStrategy: string;
+  promptVersion: string;
+  categories: string[];
   keywords: string[];
-  entities?: string[];           // 实体抽取
-  language?: string;
-  value_score: number;           // 0-10
+  entities: string[];
+  language: string | null;
+  valueScore: number;
   summary: {
     summary: string;
     paragraphSummaries: string[];
   } | null;
-  source_id: string;             // 冗余字段，便于查询
-  source_name: string;
-  source_trace_id?: string;      // 派生的对外追踪标识
-  content_trace_id?: string;     // 派生的对外追踪标识
-  original_url: string;
+  originalUrl: string;
+  sourceName: string;
+  sourceTraceId: string | null;
+  contentTraceId: string | null;
   status: "basic" | "full";
-  created_at: Date;
+  createdAt: Date;
 }
 
-// Digest 报告
-interface Digest {
+interface DigestReport {
   id: string;
-  digest_date: string;           // YYYY-MM-DD，表示发送日本地日期标签
+  period: "daily" | "weekly";
+  digestDate: string;
   status: "draft" | "ready" | "sent" | "failed";
-  markdown_body: string;
-  created_at: Date;
-  sent_at?: Date;
+  windowStart: Date;
+  windowEnd: Date;
+  markdownBody: string | null;
+  emailSubject: string | null;
+  sentAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-// Digest 条目关联
 interface DigestItem {
   id: string;
-  digest_id: string;
-  analysis_id: string;
-  section_title: string;         // 主题分组
-  rank: number;                  // 排序
+  digestId: string;
+  analysisRecordId: string;
+  sectionTitle: string;
+  rank: number;
+  createdAt: Date;
 }
 
-// 反馈信号
+interface SourceImportRun {
+  id: string;
+  mode: "single" | "opml";
+  totalCount: number;
+  createdCount: number;
+  skippedCount: number;
+  failedCount: number;
+  status: "pending" | "running" | "completed" | "failed";
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+}
+
+interface SourceImportRunItem {
+  id: string;
+  importRunId: string;
+  inputUrl: string;
+  normalizedUrl: string | null;
+  result: "created" | "skipped_duplicate" | "failed";
+  sourceId: string | null;
+  errorMessage: string | null;
+  createdAt: Date;
+}
+
+interface PipelineRun {
+  id: string;
+  contentId: string | null;
+  digestId: string | null;
+  pipelineName: string;
+  pipelineVersion: string;
+  status: "pending" | "running" | "completed" | "failed";
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+}
+
+interface StepRun {
+  id: string;
+  pipelineRunId: string;
+  stepName: string;
+  inputRef: string | null;
+  outputRef: string | null;
+  status: "pending" | "running" | "completed" | "failed";
+  errorMessage: string | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+}
+```
+
+### 4.2 当前仍在数据层预留的对象
+
+```typescript
 interface FeedbackSignal {
   id: string;
-  target_type: "content" | "source" | "topic";
-  target_id: string;
+  targetType: "content" | "source" | "topic";
+  targetId: string;
   signal:
     | "useful"
     | "useless"
@@ -213,370 +380,189 @@ interface FeedbackSignal {
     | "prefer_short"
     | "prefer_deep"
     | "prefer_action";
-  created_at: Date;
-}
-
-// 导入任务记录
-interface SourceImportRun {
-  id: string;
-  mode: "single" | "opml";
-  total_count: number;
-  created_count: number;
-  skipped_count: number;
-  failed_count: number;
-  status: "pending" | "running" | "completed" | "failed";
-  created_at: Date;
-}
-
-interface SourceImportRunItem {
-  id: string;
-  import_run_id: string;
-  input_url: string;
-  normalized_url?: string;
-  result: "created" | "skipped_duplicate" | "failed";
-  source_id?: string;
-  error_message?: string;
-  created_at: Date;
-}
-
-// Pipeline 执行记录
-interface PipelineRun {
-  id: string;
-  content_id?: string;
-  digest_id?: string;
-  pipeline_name: string;
-  pipeline_version: string;
-  status: "pending" | "running" | "completed" | "failed";
-  started_at?: Date;
-  finished_at?: Date;
-}
-
-interface StepRun {
-  id: string;
-  pipeline_run_id: string;
-  step_name: string;
-  input_ref?: string;
-  output_ref?: string;
-  status: "pending" | "running" | "completed" | "failed";
-  error_message?: string;
-  started_at?: Date;
-  finished_at?: Date;
+  reason: string | null;
+  payload: Record<string, unknown> | null;
+  createdAt: Date;
 }
 ```
 
-### 3.2 数据关系
+该表已存在于 schema，但当前没有 Web 入口，也没有编排/排序闭环使用它。
 
-```
+### 4.3 数据关系
+
+```text
 Source (1) ──────► (N) ContentItem
-ContentItem (1) ──► (N) AnalysisRecord
-AnalysisRecord (N) ◄──► (N) DigestItem ◄──► (1) Digest
-FeedbackSignal (N) ────► (1) Source/ContentItem/Topic
+ContentItem (1) ─► (1) ContentItemRaw
+ContentItem (1) ─► (N) AnalysisRecord
+AnalysisRecord (N) ─► (N) DigestItem ─► (1) DigestReport
+SourceImportRun (1) ─► (N) SourceImportRunItem
+PipelineRun (1) ─► (N) StepRun
 ```
 
-### 3.3 关键约束
+### 4.4 关键约束
 
-1. **唯一性约束**
-   - `Source`: `type + identifier` 唯一
-   - `ContentItem`: 应用层按 `(source_id, external_id)` → `(source_id, normalized_original_url)` → `(source_id, original_url_hash)` 的顺序查重
-   - `ContentItem`: `(source_id, external_id)` 条件唯一（仅当 `external_id` 存在时生效）
-   - `ContentItem`: `(source_id, normalized_original_url)` 条件唯一（仅当规范化 URL 存在时生效）
-   - `ContentItem`: `(source_id, original_url_hash)` 条件唯一（仅当 URL 哈希存在时生效）
-   - `AnalysisRecord`: `content_id + model_strategy + prompt_version` 唯一
-
-2. **数据分离原则**
-   - 加工层（`cleaned_md` / `AnalysisRecord`）不得回写覆盖原始层（`raw_body`）
-   - 原始层内部，全文抓取可替代 feed 初始内容；feed 原始摘要通过 `rawExcerpt` 保留
-   - `cleaned_md` 可重新生成
-   - `AnalysisRecord` 支持多版本共存
-
-3. **Digest 准入要求**
-   - 进入 Digest 的 `AnalysisRecord` 必须包含:
-     - `summary.summary`
-     - `original_url`
-     - `source_name`
-
-4. **时间筛选窗口**
-   - `effective_time = published_at ?? fetched_at`
-   - 默认配置为 `SMART_FEED_TIME_WINDOW_HOURS=72` 与 `SMART_FEED_TIMEZONE=Asia/Shanghai`
-   - 当 `effective_time >= now_in_app_timezone - TIME_WINDOW_HOURS` 时内容才进入标准化、AI 分析与 Digest 流水线
-   - 若 `published_at` 与 `fetched_at` 都缺失，则条目不得进入后续流水线
-
-5. **Digest 日期与统计区间**
-   - 持久化时间使用 UTC 时间或 Unix timestamp；Digest 的日期标签、统计区间和发送时刻按本地业务时区计算
-   - Digest 业务时区优先使用 `SMART_FEED_DIGEST_TIMEZONE`，未配置时回退 `SMART_FEED_TIMEZONE`，再回退机器时区
-   - 默认发送时刻由 `SMART_FEED_DIGEST_SEND_HOUR=8` 定义
-   - 本次统计区间为 `window_start = max(last_successful_digest_at, now_local_8am - 48h)`、`window_end = now_local_8am`
-   - 最大回溯窗口由 `SMART_FEED_DIGEST_MAX_LOOKBACK_HOURS=48` 控制，超过上限时只发送最近 48 小时内容
-   - `digest_date`、`daily:YYYY-MM-DD` 与邮件主题日期都表示发送日本地日期标签
-   - 晚到内容只要其业务本地时间落在本次统计区间内，即归入本次 Digest
+1. `sources(type, identifier)` 唯一。
+2. `content_items` 具备三层唯一约束：
+   - `(source_id, external_id)` when not null
+   - `(source_id, normalized_original_url)` when not null
+   - `(source_id, original_url_hash)` when not null
+3. `analysis_records(content_id, model_strategy, prompt_version)` 唯一。
+4. `digest_reports(period, digest_date)` 唯一。
+5. `digest_items(digest_id, analysis_record_id)` 唯一。
 
 ---
 
-## 4. Pipeline 设计
+## 5. 队列与流水线架构
 
-### 4.1 核心 Pipeline
+### 5.1 当前队列拓扑
 
-```
-Source Ingestion Pipeline
-  ├─ 1. Validate RSS URL
-  ├─ 2. Check Duplication
-  ├─ 3. Create Source Record
-  └─ 4. Initialize Sync Sentinel
+| 队列名 | 任务 | 默认并发 |
+|------|------|---------|
+| `source-dispatch-queue` | `scheduler.sources.sync` | 1 |
+| `ingestion-queue` | `source.fetch` | 2 |
+| `content-queue` | `content.fetch-html`, `content.normalize` | 5 |
+| `ai-queue` | `content.analyze.basic`, `content.analyze.heavy` | 1 |
+| `digest-queue` | `digest.compose`, `digest.deliver` | 1 |
+| `smart-feed` | `source.import` | 1 |
 
-Content Processing Pipeline
-  ├─ 1. Fetch RSS Feed
-  ├─ 2. Parse Entries
-  ├─ 3. Deduplicate by external_id / normalized_original_url / original_url_hash
-  ├─ 4. Fetch HTML Content
-  ├─ 5. Normalize to Markdown
-  ├─ 6. Lightweight Analysis
-  ├─ 7. Heavy Summary (conditional)
-  └─ 8. Update Status
+### 5.2 内容流水线
 
-Digest Generation Pipeline
-  ├─ 1. Collect Analysis Records
-  ├─ 2. Apply Feedback Filters
-  ├─ 3. Group by Category
-  ├─ 4. Sort by Value Score
-  ├─ 5. Generate Markdown
-  └─ 6. Save Digest Record
-
-Delivery Pipeline
-  ├─ 1. Render Email Template
-  ├─ 2. Send via SMTP
-  └─ 3. Update Sent Status
+```text
+source.import / scheduler
+  -> source.fetch
+  -> content.fetch-html
+  -> content.normalize
+  -> content.analyze.basic
+  -> content.analyze.heavy (conditional)
 ```
 
-### 4.2 任务类型与队列映射
+#### 5.2.1 `source.fetch`
+- 抓取 Feed，支持 304 / ETag / Last-Modified。
+- 解析 RSS/Atom 项。
+- 执行三级去重。
+- 计算 `effectiveAt` 并判断时间窗口。
+- 窗口内写入 `raw`，窗口外写入 `sentinel`。
+- 仅 `raw` 内容入队 `content.fetch-html`。
 
-项目内统一使用 `SmartFeedTaskName` 常量进行任务分发，通过 `taskToQueueMap` 自动路由。
+#### 5.2.2 `content.fetch-html`
+- 优先抓取原始页面 HTML。
+- 成功时更新 `content_item_raws.rawBody`。
+- 失败但 RSS 原始内容可用时，以 `completed_with_fallback` 继续。
+- 失败且无 fallback 时写 `content_items.status="failed"`。
 
-| 任务名称 (Task Name) | 触发条件 | 目标队列 (Target Queue) | 说明 |
-|-------------------|---------|-----------------------|------|
-| `scheduler.sources.sync` | 定时调度 (1h) | `source-dispatch-queue` | 扫描 DB 并扇出 `source.fetch` |
-| `source.fetch` | 调度扇出 | `ingestion-queue` | 抓取 RSS 并入库 ContentItem |
-| `content.fetch-html` | 新 entry 发现 | `content-queue` | 抓取原文 HTML |
-| `content.normalize` | HTML 抓取完成 | `content-queue` | 转换为 Markdown |
-| `content.analyze.basic` | 标准化完成 | `ai-queue` | AI 基础评分与分类 |
-| `content.analyze.heavy` | value_score > 6 | `ai-queue` | AI 深度摘要生成 |
-| `digest.compose` | 每日定时 (8am) | `digest-queue` | 简报内容编排 |
-| `digest.deliver` | Digest 生成完成 | `digest-queue` | 邮件投递 |
-| `source.import` | 用户手动添加 | `smart-feed` (Legacy) | 兼容现有导入链路 |
+#### 5.2.3 `content.normalize`
+- 选择正文根节点，移除噪音。
+- HTML/文本转换为 Markdown。
+- 追加标题和 Source 链接。
+- 超长时截断。
+- 完成后状态推进为 `normalized` 并入队 `content.analyze.basic`。
 
-### 4.3 任务执行规则
+#### 5.2.4 `content.analyze.basic`
+- 读取 `cleaned_md`。
+- 根据 Provider 解析任务配置。
+- 命中缓存则直接复用。
+- 未命中时执行基础分析。
+- 分数高于阈值才继续入队 `content.analyze.heavy`。
 
-1. **队列路由**: 所有生产者通过 `getQueueForTask(taskName)` 获取目标队列，严禁硬编码队列名称。
-2. **幂等性**: 同一输入多次执行结果一致。
-3. **并发隔离**: 针对 AI 和 调度任务使用 `concurrency: 1` 确保顺序执行与限流；针对内容抓取使用更高并发。
-4. **超时设置**:
-   - 抓取任务: 30s
-   - AI 分析: 60s
-   - Digest 生成: 300s
+#### 5.2.5 `content.analyze.heavy`
+- 必须依赖至少一条 basic 记录。
+- 命中缓存则直接复用。
+- 生成 `summary` 与 `paragraphSummaries`。
+- 完成后写入 `analysis_records(status="full")`。
+
+### 5.3 Digest 流水线
+
+```text
+scheduler
+  -> digest.compose
+  -> digest.deliver
+```
+
+#### 5.3.1 `digest.compose`
+- 依据业务时区计算 `windowStart` / `windowEnd`。
+- 查询窗口内的 `full` 分析记录。
+- 过滤 `blocked` 来源与无效摘要。
+- 对同一内容保留最新摘要。
+- 按主分类分组渲染 Markdown。
+- 持久化到 `digest_reports` / `digest_items`。
+
+#### 5.3.2 `digest.deliver`
+- 查找 `digest_reports`。
+- 若已发送则幂等跳过。
+- 若邮件开关关闭则跳过。
+- 若启用邮件则经 SMTP 发送并写入 `sentAt` / `status="sent"`。
+
+### 5.4 运行时追踪
+
+- 内容流水线运行时名称: `content-processing`
+- Digest 流水线运行时名称: `digest-generation`
+- 每个步骤统一通过 runtime：
+  - 创建或续用 `pipeline_run`
+  - 创建 `step_run`
+  - 记录输入输出 JSON
+  - 自动透传 `pipelineRunId`
+  - 在需要时自动入队下一个步骤
 
 ---
 
-## 5. AI 策略设计
+## 6. 调度、环境变量与运行配置
 
-### 5.1 分层处理策略
+### 6.1 关键环境变量
 
-```
-所有内容
-  │
-  ├─► 轻量分析 (Haiku)
-  │   ├─ 分类
-  │   ├─ 关键词
-  │   ├─ 价值评分
-  │   └─ 决策: value_score > 6?
-  │
-  └─► 重度摘要 (Sonnet)
-      ├─ 一句话总结
-      ├─ 三点要点
-      ├─ 关注理由
-      └─ 证据片段
-```
+| 变量 | 用途 |
+|------|------|
+| `DATABASE_URL` | PostgreSQL 连接 |
+| `REDIS_URL` | BullMQ / Redis 连接 |
+| `SMART_FEED_TIMEZONE` | 应用业务时区 |
+| `SMART_FEED_TIME_WINDOW_HOURS` | 内容进入流水线的滚动时间窗口 |
+| `SMART_FEED_DIGEST_TIMEZONE` | Digest 业务时区 |
+| `SMART_FEED_DIGEST_SEND_HOUR` | 每日 Digest 发送小时 |
+| `SMART_FEED_DIGEST_MAX_LOOKBACK_HOURS` | Digest 最大回溯窗口 |
+| `SMART_FEED_VALUE_SCORE_THRESHOLD` | 自动进入 heavy 的基础分析阈值 |
+| `SMART_FEED_AI_PROVIDER` | `dummy` / `openrouter` |
+| `SMART_FEED_AI_BASIC_MODEL` | OpenRouter 基础分析模型 |
+| `SMART_FEED_AI_HEAVY_MODEL` | OpenRouter 深度摘要模型 |
+| `OPENROUTER_API_KEY` | OpenRouter 凭据 |
+| `SMART_FEED_EMAIL_DELIVERY_ENABLED` | 是否启用邮件投递 |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` / `SMTP_TO` | SMTP 投递配置 |
+| `SMART_FEED_BULL_BOARD_HOST` / `SMART_FEED_BULL_BOARD_PORT` | worker bull-board 监听配置 |
 
-### 5.2 模型配置
+### 6.2 默认行为
 
-| 阶段 | 模型 | Token 限制 | 成本估算 |
-|------|------|-----------|---------|
-| 轻量分析 | Claude Haiku | 输入 4K / 输出 500 | ~$0.001/篇 |
-| 重度摘要 | Claude Sonnet | 输入 8K / 输出 1K | ~$0.01/篇 |
-
-### 5.3 Prompt 版本管理
-
-```typescript
-const PROMPT_VERSIONS = {
-  "basic-analysis-v1": {
-    system: "你是内容分析助手...",
-    user: "分析以下内容: {content}",
-    output_schema: BasicAnalysisSchema
-  },
-  "heavy-summary-v1": {
-    system: "你是摘要生成助手...",
-    user: "生成摘要: {content}",
-    output_schema: HeavySummarySchema
-  }
-};
-```
-
-### 5.4 缓存策略
-
-缓存键: `content_id + model_strategy + prompt_version`
-
-- 命中缓存: 直接返回
-- 未命中: 调用 API 并缓存结果
-- `prompt_version` 变化时视为新版本并生成新的 `AnalysisRecord`，旧版本保留不覆盖
-- `original_url_hash` 仅作为 URL 级去重回退键，不作为跨源全局唯一键
-- 过期策略: 30 天未使用自动清理
+- `SMART_FEED_TIMEZONE` 默认 `Asia/Shanghai`
+- `SMART_FEED_TIME_WINDOW_HOURS` 默认 `72`
+- `SMART_FEED_DIGEST_SEND_HOUR` 默认 `8`
+- `SMART_FEED_DIGEST_MAX_LOOKBACK_HOURS` 默认 `48`
+- `SMART_FEED_VALUE_SCORE_THRESHOLD` 默认 `6`
+- bull-board 默认监听 `127.0.0.1:3010`
 
 ---
 
-## 6. API 设计
+## 7. 当前已知差异、占位与非目标
 
-### 6.1 来源管理 API
+### 7.1 已实现但容易误判的点
 
-```typescript
-// 添加单个 RSS
-POST /api/sources
-Body: { url: string }
-Response: { id: string, status: "active" }
+1. **Web Digest 页面不是持久化 Digest 报告的直出视图**  
+   `/digest` 直接读取 `analysis_records(status="full")`，而后台邮件投递基于 `digest_reports` / `digest_items`。
 
-// 批量导入 OPML
-POST /api/sources/import-opml
-Body: FormData (opml file)
-Response: {
-  run_id: string,
-  total: number,
-  created: number,
-  skipped: number,
-  failed: number
-}
+2. **产品主业务边界不是 API Routes**  
+   当前以 Server Actions 和查询模块为主，`src/app/api` 只是占位目录。
 
-导入规则：
-- 重复项计入 `skipped`，不计入 `failed`
-- 非法源、解析失败或不可访问源计入 `failed`
-- OPML 导入采用逐条处理，不因单条失败整批回滚
-- `SourceImportRun` 保留汇总计数，`SourceImportRunItem` 保留逐条结果明细
+3. **来源状态 `blocked` 已被后台逻辑识别，但前台不能设置**  
+   Digest 过滤和 schema 支持 `blocked`，Sources 页面只支持 `active / paused` 切换。
 
-// 查询来源列表
-GET /api/sources
-Query: { status?: "active" | "paused" | "blocked" }
-Response: Source[]
+### 7.2 当前明确占位
 
-// 更新来源状态
-PATCH /api/sources/:id
-Body: { status?: string, weight?: number }
-Response: Source
-```
+- `/settings` 仅静态展示，不写入配置。
+- `src/app/admin` 没有实际管理页面。
+- `feedback_signals` 仅数据层预留。
+- 非 RSS `source_type` 仅 schema 预留。
 
-### 6.2 Digest API
+### 7.3 当前非目标
 
-```typescript
-// 获取最新 Digest
-GET /api/digest/latest
-Response: Digest & { items: DigestItem[] }
+- 多租户与权限系统
+- 公开 API
+- 用户反馈驱动排序/风格学习
+- 非文本源接入闭环
+- Web 端手动执行 Digest 编排/投递
 
-// 获取指定日期 Digest
-GET /api/digest/:date
-Response: Digest & { items: DigestItem[] }
-
-// 获取内容详情
-GET /api/content/:id
-Response: ContentItem & { analysis: AnalysisRecord }
-```
-
-### 6.3 反馈 API
-
-```typescript
-// 提交反馈（后续迭代接口，非 MVP 当前交付）
-POST /api/feedback
-Body: {
-  target_type: "content" | "source" | "topic",
-  target_id: string,
-  signal:
-    | "useful"
-    | "useless"
-    | "block"
-    | "upweight"
-    | "downweight"
-    | "upweight_topic"
-    | "downweight_topic"
-    | "prefer_short"
-    | "prefer_deep"
-    | "prefer_action"
-}
-Response: { success: boolean }
-```
-
----
-
-## 7. 目录结构
-
-```
-smart-feed/
-├── src/
-│   ├── app/                    # Next.js App Router
-│   │   └── api/               # API Routes
-│   ├── workers/
-│   │   └── bull-board.ts      # worker 内部 bull-board 管理入口
-│   ├── queue/                 # 队列基础设施
-│   │   ├── config.ts          # 多队列路由与并发配置
-│   │   ├── connection.ts      # 队列注册与 Worker 创建工厂
-│   │   └── index.ts
-│   ├── pipeline/              # Pipeline 逻辑
-│   │   └── handlers/          # 职能任务处理器
-│   ├── scheduler/             # 调度器实现
-│   │   ├── jobs.ts            # 定时任务跨队列注册
-│   │   └── index.ts
-│   ├── services/              # 业务服务层
-│   │   ├── pipeline-runtime.ts # 跨队列入队逻辑
-│   │   └── source.ts          # 调度预过滤查询
-│   ├── ai/                    # AI 适配层
-│   └── workers/               # Worker 进程入口
-│       └── index.ts           # 多 Worker 实例启动与优雅停机
-├── drizzle/                   # Drizzle 迁移文件
-```
-
----
-
-## 8. 关键技术决策
-
-### 8.1 为什么选择多队列分工？
-
-- **避免队头阻塞 (HOLB)**: 海量 RSS 抓取任务不再阻塞准时性要求高的 Digest 生成任务。
-- **精准并发策略**: AI 任务需要串行 (`concurrency: 1`) 以应对 RPM 限制，而 HTML 抓取可以并行提高效率。
-- **可观测性提升**: 通过 bull-board 可以一眼看出是哪个环节（如 AI 或网络抓取）出现了积压。
-
-### 8.2 调度预过滤机制
-
-- **问题**: 频繁入队重复的 `source.fetch` 任务会导致 Redis 压力和不必要的计算。
-- **方案**: 调度器在入队前通过 SQL 过滤：`last_successful_sync_at < NOW() - INTERVAL '1 hour'`，辅以 BullMQ 的 Job ID 去重，确保高效且幂等。
-
----
-
-## 13. 监控与可观测性
-
-### 13.1 队列可观测性
-
-- **多队列看板**: 使用 bull-board 监控 `source-dispatch`, `ingestion`, `content`, `ai`, `digest` 全部 5 个队列。
-- **健康度监控**: 重点关注 `ai-queue` 的任务等待时长和 `content-queue` 的失败率。
-
----
-
-## 14. 性能优化
-
-### 14.1 任务并发策略 (workerConcurrencyMap)
-
-| 队列 | 并发数 (Concurrency) | 理由 |
-|------|--------------------|------|
-| `source-dispatch-queue` | 1 | 纯调度任务，禁止并发以防重复扇出 |
-| `ingestion-queue` | 2 | RSS 抓取，网络 I/O 为主 |
-| `content-queue` | 5 | 正文抓取与标准化，高并发提高吞吐 |
-| `ai-queue` | 1 | AI 分析，严格串行防止触发 RPM 429 |
-| `digest-queue` | 1 | 编排与投递，确保幂等与准时 |
-
----
-
-**文档版本**: v0.3
-**最后更新**: 2026-04-01
-**维护者**: smart-feed 开发团队
