@@ -45,3 +45,4 @@
 | [001](fix/001_drizzle-cli-env-loading.md) | 2026-04-01 | Drizzle CLI 未读取 .env.local 的迁移失败修复 |
 | [002](fix/002_resolve-digest-ssr-boundary-error.md) | 2026-04-01 | 修复 Digest 页面 SSR 边界错误 |
 | [003](fix/003_repair-digest-list-filter-and-grouping.md) | 2026-04-06 | 修复 Digest 列表筛选与分类分组回归 |
+| [004](fix/004_remove-digest-category-grouping-duplication.md) | 2026-04-07 | 移除 Digest 页面分类分组重复展示 |

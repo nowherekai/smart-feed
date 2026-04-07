@@ -3,7 +3,6 @@ import { getDailyDigestItems } from "@/app/actions/intelligence-actions";
 import { DigestItem } from "@/components/features/digest-item";
 import { toDigestItemRecord } from "@/components/features/intelligence-view-model";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const dynamic = "force-dynamic";
@@ -41,9 +40,9 @@ export default function DailyDigestPage() {
 
 async function DailyDigestSections() {
   const records = await getDailyDigestItems();
-  const groupedCategories = groupDigestRecords(records);
+  const digestRecords = records.flatMap((record) => toDigestItemRecord(record) ?? []);
 
-  if (groupedCategories.length === 0) {
+  if (digestRecords.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
         No digest generated yet. Wait for the scheduled task or trigger manually.
@@ -52,76 +51,27 @@ async function DailyDigestSections() {
   }
 
   return (
-    <div className="space-y-16">
-      {groupedCategories.map(({ category, items }) => (
-        <section key={category} className="space-y-8">
-          <div className="flex items-center gap-4">
-            <h4 className="shrink-0 text-lg font-bold uppercase tracking-widest text-primary">{category}</h4>
-            <Separator className="flex-1" />
-          </div>
-          <div className="space-y-8">
-            {items.map((item) => (
-              <DigestItem key={`${category}-${item.id}`} record={item} />
-            ))}
-          </div>
-        </section>
+    <div className="space-y-8">
+      {digestRecords.map((item) => (
+        <DigestItem key={item.id} record={item} />
       ))}
     </div>
   );
 }
 
-function groupDigestRecords(records: Awaited<ReturnType<typeof getDailyDigestItems>>) {
-  const grouped = new Map<string, NonNullable<ReturnType<typeof toDigestItemRecord>>[]>();
-
-  for (const record of records) {
-    const digestRecord = toDigestItemRecord(record);
-
-    if (!digestRecord) {
-      continue;
-    }
-
-    const categories = record.categories.length > 0 ? record.categories : ["未分类"];
-    const uniqueCategories = new Set(categories.map((category) => category.trim() || "未分类"));
-
-    for (const category of uniqueCategories) {
-      const categoryItems = grouped.get(category);
-
-      if (categoryItems) {
-        categoryItems.push(digestRecord);
-        continue;
-      }
-
-      grouped.set(category, [digestRecord]);
-    }
-  }
-
-  return Array.from(grouped.entries()).map(([category, items]) => ({
-    category,
-    items,
-  }));
-}
-
 function DailyDigestFallback() {
   return (
-    <div className="space-y-16">
-      {DIGEST_SKELETON_GROUPS.map((group) => (
-        <section key={group.key} className="space-y-8">
-          <div className="flex items-center gap-4">
-            <Skeleton className="h-5 w-24" />
-            <Separator className="flex-1" />
+    <div className="space-y-8">
+      {DIGEST_SKELETON_GROUPS.flatMap((group) =>
+        group.items.map((itemKey) => (
+          <div key={itemKey} className="space-y-3 border-l-2 border-border/50 pl-8 py-2">
+            <Skeleton className="h-6 w-3/4" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-24 w-full rounded-lg" />
           </div>
-          <div className="space-y-8">
-            {group.items.map((itemKey) => (
-              <div key={itemKey} className="space-y-3 border-l-2 border-border/50 pl-8 py-2">
-                <Skeleton className="h-6 w-3/4" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-5/6" />
-                <Skeleton className="h-24 w-full rounded-lg" />
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
+        )),
+      )}
     </div>
   );
 }
