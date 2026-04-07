@@ -261,6 +261,7 @@ export const contentItems = pgTable(
     contentSourceIdx: index("idx_content_items_source_id").on(table.sourceId),
     contentStatusIdx: index("idx_content_items_status").on(table.status),
     contentEffectiveIdx: index("idx_content_items_effective_at").on(table.effectiveAt),
+    contentStatusEffectiveIdx: index("idx_content_items_status_effective_at").on(table.status, table.effectiveAt),
     contentSourceEffectiveIdx: index("idx_content_items_source_effective_at").on(table.sourceId, table.effectiveAt),
     /** 来源内外部 ID 唯一约束 */
     contentSourceExternalUnique: uniqueIndex("uniq_content_items_source_external_id")

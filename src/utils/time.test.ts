@@ -1,6 +1,16 @@
 import { expect, test } from "bun:test";
 
-import { getDigestWindow, getEffectiveTime, isInTimeWindow } from "./time";
+import {
+  addZonedDays,
+  addZonedHours,
+  addZonedMonths,
+  getDigestWindow,
+  getEffectiveTime,
+  getStartOfZonedDay,
+  getStartOfZonedMonth,
+  getStartOfZonedWeek,
+  isInTimeWindow,
+} from "./time";
 
 test("getEffectiveTime prefers publishedAt and falls back to fetchedAt", () => {
   const publishedAt = new Date("2026-03-31T00:00:00.000Z");
@@ -43,4 +53,20 @@ test("getDigestWindow clamps start with last successful digest time", () => {
 
   expect(window.windowEnd.toISOString()).toBe("2026-03-31T00:00:00.000Z");
   expect(window.windowStart.toISOString()).toBe("2026-03-30T06:00:00.000Z");
+});
+
+test("zoned period helpers compute Asia/Shanghai natural day week and month starts", () => {
+  const now = new Date("2026-04-07T04:30:00.000Z");
+
+  expect(getStartOfZonedDay(now, "Asia/Shanghai").toISOString()).toBe("2026-04-06T16:00:00.000Z");
+  expect(getStartOfZonedWeek(now, "Asia/Shanghai").toISOString()).toBe("2026-04-05T16:00:00.000Z");
+  expect(getStartOfZonedMonth(now, "Asia/Shanghai").toISOString()).toBe("2026-03-31T16:00:00.000Z");
+});
+
+test("zoned shift helpers advance wall clock across hour day and month", () => {
+  const start = new Date("2026-03-31T16:00:00.000Z");
+
+  expect(addZonedHours(start, 1, "Asia/Shanghai").toISOString()).toBe("2026-03-31T17:00:00.000Z");
+  expect(addZonedDays(start, 1, "Asia/Shanghai").toISOString()).toBe("2026-04-01T16:00:00.000Z");
+  expect(addZonedMonths(start, 1, "Asia/Shanghai").toISOString()).toBe("2026-04-30T16:00:00.000Z");
 });
