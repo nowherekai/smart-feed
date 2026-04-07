@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, lt, sql } from "drizzle-orm";
 import type {
   StatsBucketGranularity,
   StatsFunnelStep,
@@ -10,6 +10,7 @@ import type {
 } from "@/app/stats/types";
 import { getAppEnv } from "@/config";
 import { db } from "@/db";
+import { contentItems, sources } from "@/db/schema";
 import { createLogger } from "@/utils/logger";
 import {
   addZonedDays,
@@ -302,18 +303,18 @@ function getBucketSqlParts(granularity: StatsBucketGranularity): { format: strin
 
 function getContentWindowFilter(window: StatsRangeWindow) {
   if (window.windowStart) {
-    return sql`effective_at >= ${window.windowStart} AND effective_at < ${window.windowEnd}`;
+    return sql`effective_at >= ${window.windowStart.toISOString()} AND effective_at < ${window.windowEnd.toISOString()}`;
   }
 
-  return sql`effective_at < ${window.windowEnd}`;
+  return sql`effective_at < ${window.windowEnd.toISOString()}`;
 }
 
 function getAnalysisWindowFilter(window: StatsRangeWindow) {
   if (window.windowStart) {
-    return sql`created_at >= ${window.windowStart} AND created_at < ${window.windowEnd}`;
+    return sql`created_at >= ${window.windowStart.toISOString()} AND created_at < ${window.windowEnd.toISOString()}`;
   }
 
-  return sql`created_at < ${window.windowEnd}`;
+  return sql`created_at < ${window.windowEnd.toISOString()}`;
 }
 
 function getStatsSourceDisplayName(sourceTitle: string | null, sourceIdentifier: string): string {
@@ -557,26 +558,26 @@ function createStatsQueryDeps(): StatsQueryDeps {
       };
     },
     async fetchTopSourceRows(window) {
-      const result = await db.execute<{
-        item_count: number | string;
-        source_id: string;
-        source_identifier: string;
-        source_title: string | null;
-      }>(sql`
-        SELECT
-          content_items.source_id,
-          sources.title AS source_title,
-          sources.identifier AS source_identifier,
-          COUNT(*)::int AS item_count
-        FROM content_items
-        INNER JOIN sources ON sources.id = content_items.source_id
-        WHERE ${getContentWindowFilter(window)}
-        GROUP BY content_items.source_id, sources.title, sources.identifier
-        ORDER BY item_count DESC, source_identifier ASC
-        LIMIT 5
-      `);
+      const itemCount = count();
+      const whereClause = window.windowStart
+        ? and(gte(contentItems.effectiveAt, window.windowStart), lt(contentItems.effectiveAt, window.windowEnd))
+        : lt(contentItems.effectiveAt, window.windowEnd);
 
-      return Array.from(result).map((row) => ({
+      const result = await db
+        .select({
+          item_count: itemCount,
+          source_id: contentItems.sourceId,
+          source_identifier: sources.identifier,
+          source_title: sources.title,
+        })
+        .from(contentItems)
+        .innerJoin(sources, eq(sources.id, contentItems.sourceId))
+        .where(whereClause)
+        .groupBy(contentItems.sourceId, sources.title, sources.identifier)
+        .orderBy(desc(itemCount), asc(sources.identifier))
+        .limit(5);
+
+      return result.map((row) => ({
         sourceId: row.source_id,
         sourceTitle: row.source_title,
         sourceIdentifier: row.source_identifier,
