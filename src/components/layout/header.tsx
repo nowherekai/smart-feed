@@ -7,6 +7,7 @@ import { buttonVariants } from "@/components/ui/button-variants";
 
 const TITLE_BY_PATH: Record<string, string> = {
   "/": "Dashboard",
+  "/admin/ops": "Ops",
   "/digest": "Daily Digest",
   "/analysis": "Analysis",
   "/stats": "Stats",
@@ -17,7 +18,7 @@ const TITLE_BY_PATH: Record<string, string> = {
 
 export function Header() {
   const pathname = usePathname();
-  const title = TITLE_BY_PATH[pathname] ?? "Smart Feed";
+  const title = TITLE_BY_PATH[pathname] ?? (pathname.startsWith("/admin/ops") ? "Ops" : "Smart Feed");
 
   return (
     <header className="h-16 border-b border-border flex items-center justify-between px-8 bg-background/80 backdrop-blur-md sticky top-0 z-10 w-full">
