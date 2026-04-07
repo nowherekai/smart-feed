@@ -228,7 +228,7 @@ export function StatsClient({ data }: { data: StatsPageData }) {
           <Card className="border-border/80 bg-card/80">
             <CardHeader className="space-y-2">
               <CardTitle>来源产出 Top 5</CardTitle>
-              <p className="text-sm text-muted-foreground">按当前范围内文章产出排序。</p>
+              <p className="text-sm text-muted-foreground">展示选定范围内产出最高的内容来源。</p>
             </CardHeader>
             <CardContent className="space-y-3">
               {data.topSources.length === 0 ? (
