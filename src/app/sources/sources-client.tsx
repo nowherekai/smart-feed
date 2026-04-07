@@ -1,7 +1,6 @@
 "use client";
 
 import { Download, FileUp, Trash2, X } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   type ChangeEvent,
@@ -471,10 +470,10 @@ export function SourcesClient({ initialSources }: { initialSources: SourceListIt
       <Card className="border-border">
         <CardHeader>
           <CardAction>
-            <Link href="/sources/export" className={buttonVariants({ size: "sm", variant: "outline" })}>
+            <a href="/sources/export" className={buttonVariants({ size: "sm", variant: "outline" })}>
               <Download size={14} />
               导出 OPML
-            </Link>
+            </a>
           </CardAction>
           <CardTitle>Manage Sources</CardTitle>
           <CardDescription>添加单个 RSS，或通过 OPML 批量导入现有订阅清单。</CardDescription>
