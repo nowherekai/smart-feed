@@ -88,7 +88,7 @@ export function AnalysisClient({ data }: { data: AnalysisPageData }) {
 
   useEffect(() => {
     const viewport = contentRef.current?.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
-    if (viewport) {
+    if (viewport && data.page >= 1) {
       viewport.scrollTop = 0;
     }
   }, [data.page]);

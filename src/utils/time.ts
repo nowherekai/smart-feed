@@ -8,7 +8,7 @@
 const MS_PER_HOUR = 60 * 60 * 1000;
 
 /** 各时区拆解后的日期组件 */
-type ZonedDateParts = {
+export type ZonedDateParts = {
   year: number;
   month: number;
   day: number;
@@ -34,7 +34,7 @@ function assertValidTimeZone(timeZone: string): string {
 /**
  * 获取指定日期在目标时区下的各组件值
  */
-function getZonedDateParts(date: Date, timeZone: string): ZonedDateParts {
+export function getZonedDateParts(date: Date, timeZone: string): ZonedDateParts {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -78,7 +78,7 @@ function getZonedDateParts(date: Date, timeZone: string): ZonedDateParts {
 /**
  * 按日历天进行平移（处理月份和跨年溢出）
  */
-function shiftCalendarDay(parts: ZonedDateParts, deltaDays: number) {
+export function shiftCalendarDay(parts: ZonedDateParts, deltaDays: number) {
   const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
   shifted.setUTCDate(shifted.getUTCDate() + deltaDays);
 
@@ -92,7 +92,7 @@ function shiftCalendarDay(parts: ZonedDateParts, deltaDays: number) {
 /**
  * 计算目标时区相对于 UTC 的偏移毫秒数
  */
-function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
+export function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
   const parts = getZonedDateParts(date, timeZone);
   const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
 
@@ -102,12 +102,127 @@ function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
 /**
  * 将指定时区的日历时间反推回 UTC Date 对象
  */
-function zonedDateTimeToUtc(parts: ZonedDateParts, timeZone: string): Date {
+export function zonedDateTimeToUtc(parts: ZonedDateParts, timeZone: string): Date {
   const guess = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
 
   // 对 Asia/Shanghai 这类无 DST 的业务时区，offset 在当天是稳定的
   const offset = getTimeZoneOffsetMs(new Date(guess), timeZone);
   return new Date(guess - offset);
+}
+
+function shiftCalendarDateTime(parts: ZonedDateParts, delta: number, unit: "hour" | "day" | "month"): ZonedDateParts {
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second));
+
+  if (unit === "hour") {
+    shifted.setUTCHours(shifted.getUTCHours() + delta);
+  } else if (unit === "day") {
+    shifted.setUTCDate(shifted.getUTCDate() + delta);
+  } else {
+    shifted.setUTCMonth(shifted.getUTCMonth() + delta);
+  }
+
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+    second: shifted.getUTCSeconds(),
+  };
+}
+
+/**
+ * 获取目标时区自然日的起点。
+ */
+export function getStartOfZonedDay(date: Date, timeZone: string): Date {
+  assertValidTimeZone(timeZone);
+  const parts = getZonedDateParts(date, timeZone);
+
+  return zonedDateTimeToUtc(
+    {
+      year: parts.year,
+      month: parts.month,
+      day: parts.day,
+      hour: 0,
+      minute: 0,
+      second: 0,
+    },
+    timeZone,
+  );
+}
+
+/**
+ * 获取目标时区自然周的起点。默认按 ISO 周一作为一周开始。
+ */
+export function getStartOfZonedWeek(date: Date, timeZone: string): Date {
+  assertValidTimeZone(timeZone);
+  const parts = getZonedDateParts(date, timeZone);
+  const calendarDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  const weekday = calendarDate.getUTCDay();
+  const deltaDays = weekday === 0 ? -6 : 1 - weekday;
+  const startDate = shiftCalendarDay(parts, deltaDays);
+
+  return zonedDateTimeToUtc(
+    {
+      year: startDate.year,
+      month: startDate.month,
+      day: startDate.day,
+      hour: 0,
+      minute: 0,
+      second: 0,
+    },
+    timeZone,
+  );
+}
+
+/**
+ * 获取目标时区自然月的起点。
+ */
+export function getStartOfZonedMonth(date: Date, timeZone: string): Date {
+  assertValidTimeZone(timeZone);
+  const parts = getZonedDateParts(date, timeZone);
+
+  return zonedDateTimeToUtc(
+    {
+      year: parts.year,
+      month: parts.month,
+      day: 1,
+      hour: 0,
+      minute: 0,
+      second: 0,
+    },
+    timeZone,
+  );
+}
+
+/**
+ * 按目标时区的自然时间平移小时。
+ */
+export function addZonedHours(date: Date, hours: number, timeZone: string): Date {
+  assertValidTimeZone(timeZone);
+  assertNonNegativeNumber("hours", Math.abs(hours));
+
+  return zonedDateTimeToUtc(shiftCalendarDateTime(getZonedDateParts(date, timeZone), hours, "hour"), timeZone);
+}
+
+/**
+ * 按目标时区的自然时间平移天。
+ */
+export function addZonedDays(date: Date, days: number, timeZone: string): Date {
+  assertValidTimeZone(timeZone);
+  assertNonNegativeNumber("days", Math.abs(days));
+
+  return zonedDateTimeToUtc(shiftCalendarDateTime(getZonedDateParts(date, timeZone), days, "day"), timeZone);
+}
+
+/**
+ * 按目标时区的自然时间平移月。
+ */
+export function addZonedMonths(date: Date, months: number, timeZone: string): Date {
+  assertValidTimeZone(timeZone);
+  assertNonNegativeNumber("months", Math.abs(months));
+
+  return zonedDateTimeToUtc(shiftCalendarDateTime(getZonedDateParts(date, timeZone), months, "month"), timeZone);
 }
 
 function assertNonNegativeNumber(name: string, value: number) {

@@ -8,6 +8,13 @@
       "when": 1775468089110,
       "tag": "0000_parched_deathbird",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775531270170,
+      "tag": "0001_mute_fat_cobra",
+      "breakpoints": true
     }
   ]
 }

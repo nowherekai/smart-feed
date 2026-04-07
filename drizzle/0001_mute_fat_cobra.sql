@@ -1,0 +1,1 @@
+CREATE INDEX "idx_content_items_status_effective_at" ON "content_items" USING btree ("status","effective_at");

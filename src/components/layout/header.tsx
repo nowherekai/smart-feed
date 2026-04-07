@@ -9,6 +9,7 @@ const TITLE_BY_PATH: Record<string, string> = {
   "/": "Dashboard",
   "/digest": "Daily Digest",
   "/analysis": "Analysis",
+  "/stats": "Stats",
   "/original-content": "Original Feeds",
   "/sources": "Sources",
   "/settings": "Settings",

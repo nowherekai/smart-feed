@@ -32,6 +32,7 @@
 | [026](arch/026_ai-summary-contract-reset-and-digest-link-first.md) | 2026-04-06 | AI 摘要契约重构与 Digest 回链优先 |
 | [027](arch/027_opml-import-background-runtime-and-concurrency.md) | 2026-04-06 | OPML 导入后台化与受控并发收口 |
 | [028](arch/028_analysis-feed-page-and-navigation.md) | 2026-04-07 | Analysis 页面与情报列表导航 |
+| [029](arch/029_stats-mvp-page-and-query-layer.md) | 2026-04-07 | Stats MVP 页面与查询层 |
 
 ## 运维变更
 
