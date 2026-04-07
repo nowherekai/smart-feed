@@ -40,7 +40,7 @@ function AnalysisCard({ item }: { item: AnalysisListItem }) {
             {item.valueScore}
           </div>
         </div>
-        <CardTitle className="text-lg leading-snug group-hover:text-primary transition-colors">
+        <CardTitle className="line-clamp-2 text-lg leading-snug transition-colors group-hover:text-primary">
           {item.summary.summary}
         </CardTitle>
         <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
