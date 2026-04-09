@@ -18,7 +18,13 @@ export function Sidebar() {
 
       <nav className="flex-1 px-4 space-y-1">
         <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" href="/" active={pathname === "/"} />
-        <NavItem icon={<FileText size={20} />} label="Daily Digest" href="/digest" active={pathname === "/digest"} />
+        <NavItem icon={<FileText size={20} />} label="Digest 候选" href="/digest" active={pathname === "/digest"} />
+        <NavItem
+          icon={<FileText size={20} />}
+          label="Digest 归档"
+          href="/digests"
+          active={pathname.startsWith("/digests")}
+        />
         <NavItem icon={<Brain size={20} />} label="Analysis" href="/analysis" active={pathname === "/analysis"} />
         <NavItem icon={<BarChart3 size={20} />} label="Stats" href="/stats" active={pathname === "/stats"} />
         <NavItem icon={<Activity size={20} />} label="Ops" href="/admin/ops" active={pathname === "/admin/ops"} />

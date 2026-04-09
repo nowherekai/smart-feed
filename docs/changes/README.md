@@ -35,6 +35,7 @@
 | [029](arch/029_stats-mvp-page-and-query-layer.md) | 2026-04-07 | Stats MVP 页面与查询层 |
 | [030](arch/030_sources-page-rss-opml-export.md) | 2026-04-07 | Sources 页面全量 RSS OPML 导出 |
 | [031](arch/031_ops-insights-admin-page.md) | 2026-04-07 | Ops Insights 管理页与运行聚合视图 |
+| [032](arch/032_digest-archive-web-interface.md) | 2026-04-09 | 新增 Digest Reports 网页归档 |
 
 ## 运维变更
 
