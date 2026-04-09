@@ -381,7 +381,16 @@ export default async function ContentDetailPage({ params }: ContentDetailPagePro
                       <Badge variant="outline" className={cn(getStatusBadgeClass(relation.digestStatus))}>
                         {relation.digestStatus}
                       </Badge>
-                      <span className="text-sm font-medium text-foreground">{relation.digestDate}</span>
+                      {relation.period === "daily" && ["ready", "sent"].includes(relation.digestStatus) ? (
+                        <Link
+                          href={`/digests/${relation.digestDate}`}
+                          className="text-sm font-medium text-primary hover:underline hover:text-primary/80 transition-colors"
+                        >
+                          {relation.digestDate}
+                        </Link>
+                      ) : (
+                        <span className="text-sm font-medium text-foreground">{relation.digestDate}</span>
+                      )}
                     </div>
                     <div className="mt-3 grid gap-3 md:grid-cols-3">
                       <MetadataItem label="Section" value={relation.sectionTitle} />

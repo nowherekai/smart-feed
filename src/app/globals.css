@@ -138,3 +138,48 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }
+
+@layer components {
+  .prose-custom {
+    @apply text-foreground leading-relaxed;
+  }
+  .prose-custom h1 {
+    @apply text-3xl font-bold mt-10 mb-6 pb-2 border-b border-border/50;
+  }
+  .prose-custom h2 {
+    @apply text-2xl font-semibold mt-10 mb-5 pb-2 border-b border-border/40;
+  }
+  .prose-custom h3 {
+    @apply text-xl font-semibold mt-8 mb-4;
+  }
+  .prose-custom p {
+    @apply my-5 leading-7;
+  }
+  .prose-custom ul {
+    @apply list-disc list-inside my-5 space-y-2;
+  }
+  .prose-custom ol {
+    @apply list-decimal list-inside my-5 space-y-2;
+  }
+  .prose-custom li {
+    @apply leading-7;
+  }
+  .prose-custom a {
+    @apply text-primary hover:underline font-medium;
+  }
+  .prose-custom blockquote {
+    @apply border-l-4 border-primary/50 pl-4 py-1 my-6 italic text-muted-foreground bg-muted/30 rounded-r-lg;
+  }
+  .prose-custom code {
+    @apply bg-muted px-1.5 py-0.5 rounded-md text-sm font-mono text-primary/80;
+  }
+  .prose-custom pre {
+    @apply bg-muted/50 p-4 rounded-lg overflow-x-auto my-6 border border-border/50;
+  }
+  .prose-custom pre code {
+    @apply bg-transparent p-0 text-foreground;
+  }
+  .prose-custom hr {
+    @apply my-10 border-border/50;
+  }
+}
