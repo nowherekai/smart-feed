@@ -9,9 +9,9 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 function formatDigestDate(dateStr: string): string {
-  // Assuming dateStr is YYYY-MM-DD
-  const date = new Date(dateStr);
-  return new Intl.DateTimeFormat("en-US", {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return new Intl.DateTimeFormat("zh-CN", {
     weekday: "short",
     year: "numeric",
     month: "long",
