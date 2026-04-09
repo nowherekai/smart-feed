@@ -26,8 +26,8 @@ export default async function DigestArchivePage() {
     <ScrollArea className="flex-1 w-full h-full">
       <div className="p-8 max-w-4xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-2">
         <div className="text-center space-y-2 mb-12">
-          <h3 className="text-3xl font-bold tracking-tight">Digest Archive</h3>
-          <p className="text-muted-foreground">Historical daily intelligence reports</p>
+          <h3 className="text-3xl font-bold tracking-tight">Digest 归档</h3>
+          <p className="text-muted-foreground">历史日报情报汇总</p>
         </div>
 
         {archives.length === 0 ? (
