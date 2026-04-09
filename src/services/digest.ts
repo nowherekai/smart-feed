@@ -4,7 +4,7 @@
  * 包含：动态统计窗口计算、多条件内容筛选（时间、评分、摘要完整性）、内容自动分组、Markdown 渲染及数据库事务持久化。
  */
 
-import { and, desc, eq, gte, lte, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, ne } from "drizzle-orm";
 
 import { type AppEnv, getAppEnv } from "../config";
 import { type AnalysisSummary, analysisRecords, contentItems, digestItems, digestReports, getDb, sources } from "../db";
@@ -103,6 +103,10 @@ export type DigestComposeDeps = {
   collectDigestRows?: (windowStart: Date, windowEnd: Date) => Promise<DigestComposeRow[]>;
   findDigestReportByDate?: (digestDate: string) => Promise<DigestReportRecord | null>;
   findLatestSentDigestReport?: () => Promise<DigestReportRecord | null>;
+  listConsumedDigestContentIds?: (
+    candidateContentIds: readonly string[],
+    reusableDigestId: string | null,
+  ) => Promise<Set<string>>;
   now?: () => Date;
   persistDigest?: (input: PersistDigestInput) => Promise<string>;
   renderMarkdown?: (input: { digestDate: string; sections: DigestRenderSection[] }) => string;
@@ -184,21 +188,36 @@ function sortDigestItems(left: DigestSectionItem, right: DigestSectionItem): num
  * 4. 同一篇内容若有多次分析，取最新的一条。
  * 5. 按主分类分组。
  */
-function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidate {
+function selectDigestCandidates(
+  rows: DigestComposeRow[],
+  consumedContentIds: ReadonlySet<string> = new Set(),
+): DigestComposeCandidate {
   const latestByContentId = new Map<string, DigestSectionItem>();
+  let skippedBlockedCount = 0;
+  let skippedConsumedCount = 0;
+  let skippedIncompleteCount = 0;
+  let skippedMissingMetadataCount = 0;
 
   logger.info("Selecting digest candidates from rows", { rowCount: rows.length });
 
   for (const row of rows) {
     if (row.sourceStatus === "blocked") {
+      skippedBlockedCount += 1;
+      continue;
+    }
+
+    if (consumedContentIds.has(row.contentId)) {
+      skippedConsumedCount += 1;
       continue;
     }
 
     if (!hasRenderableSummary(row.summary)) {
+      skippedIncompleteCount += 1;
       continue;
     }
 
     if (!row.sourceName.trim() || !row.originalUrl.trim()) {
+      skippedMissingMetadataCount += 1;
       continue;
     }
 
@@ -242,7 +261,12 @@ function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidat
 
   logger.info("Digest selection completed", {
     candidateCount: items.length,
+    consumedContentCount: consumedContentIds.size,
     sectionCount: sections.length,
+    skippedBlockedCount,
+    skippedConsumedCount,
+    skippedIncompleteCount,
+    skippedMissingMetadataCount,
   });
 
   return {
@@ -272,6 +296,40 @@ async function findDigestReportByDate(digestDate: string): Promise<DigestReportR
     .where(and(eq(digestReports.period, "daily"), eq(digestReports.digestDate, digestDate)));
 
   return record ?? null;
+}
+
+async function listConsumedDigestContentIds(
+  candidateContentIds: readonly string[],
+  reusableDigestId: string | null,
+): Promise<Set<string>> {
+  if (candidateContentIds.length === 0) {
+    return new Set();
+  }
+
+  const db = getDb();
+  const whereConditions = [inArray(analysisRecords.contentId, [...candidateContentIds])];
+
+  if (reusableDigestId) {
+    whereConditions.push(ne(digestItems.digestId, reusableDigestId));
+  }
+
+  const rows = await db
+    .select({
+      contentId: analysisRecords.contentId,
+    })
+    .from(digestItems)
+    .innerJoin(analysisRecords, eq(analysisRecords.id, digestItems.analysisRecordId))
+    .where(and(...whereConditions));
+
+  const consumedContentIds = new Set(rows.map((row) => row.contentId));
+
+  logger.info("Loaded consumed digest content ids", {
+    candidateContentCount: candidateContentIds.length,
+    consumedContentCount: consumedContentIds.size,
+    reusableDigestId,
+  });
+
+  return consumedContentIds;
 }
 
 /** 收集窗口内所有符合条件的分析记录 */
@@ -370,6 +428,7 @@ function buildDigestDeps(overrides: DigestComposeDeps): Required<DigestComposeDe
     collectDigestRows: overrides.collectDigestRows ?? collectDigestRows,
     findDigestReportByDate: overrides.findDigestReportByDate ?? findDigestReportByDate,
     findLatestSentDigestReport: overrides.findLatestSentDigestReport ?? findLatestSentDigestReport,
+    listConsumedDigestContentIds: overrides.listConsumedDigestContentIds ?? listConsumedDigestContentIds,
     now: overrides.now ?? (() => new Date()),
     persistDigest: overrides.persistDigest ?? persistDigest,
     renderMarkdown: overrides.renderMarkdown ?? renderDigestMarkdown,
@@ -461,7 +520,9 @@ export async function runDigestCompose(
 
   // 3. 执行核心编排
   const collectedRows = await deps.collectDigestRows(windowStart, windowEnd);
-  const digestCandidate = selectDigestCandidates(collectedRows);
+  const candidateContentIds = [...new Set(collectedRows.map((row) => row.contentId))];
+  const consumedContentIds = await deps.listConsumedDigestContentIds(candidateContentIds, existingReport?.id ?? null);
+  const digestCandidate = selectDigestCandidates(collectedRows, consumedContentIds);
 
   // 4. 渲染 Markdown
   const markdownBody = deps.renderMarkdown({

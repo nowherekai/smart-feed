@@ -59,3 +59,4 @@
 | [002](changes/fix/002_resolve-digest-ssr-boundary-error.md) | 2026-04-01 | 修复 Digest 页面 SSR 边界错误 |
 | [003](changes/fix/003_repair-digest-list-filter-and-grouping.md) | 2026-04-06 | 修复 Digest 列表筛选与分类分组回归 |
 | [004](changes/fix/004_remove-digest-category-grouping-duplication.md) | 2026-04-07 | 移除 Digest 页面分类分组重复展示 |
+| [005](changes/fix/005_prevent-digest-report-item-duplication-across-lookback-window.md) | 2026-04-09 | 修复 Digest Report 跨窗口重复收录 |
