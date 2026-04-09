@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 function formatDigestDate(dateStr: string): string {
-  const [year, month, day] = dateStr.split("-").map(Number);
+  const [year = 0, month = 1, day = 1] = dateStr.split("-").map(Number);
   const date = new Date(year, month - 1, day);
   return new Intl.DateTimeFormat("zh-CN", {
     weekday: "short",
