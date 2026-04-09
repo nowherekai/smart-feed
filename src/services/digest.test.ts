@@ -100,6 +100,9 @@ test("runDigestCompose filters blocked and incomplete rows, deduplicates by cont
           status: "sent",
         });
       },
+      async listConsumedDigestContentIds() {
+        return new Set();
+      },
       now() {
         return new Date("2026-03-31T00:30:00.000Z");
       },
@@ -194,4 +197,93 @@ test("runDigestCompose skips when the current digest date has already been sent"
 
   expect(result.payload?.skippedBecauseAlreadySent).toBe(true);
   expect(result.nextStep).toBeNull();
+});
+
+test("runDigestCompose excludes content already assigned to another digest and reuses current draft digest id", async () => {
+  const persistedDigests: Array<Record<string, unknown>> = [];
+  const receivedReusableDigestIds: Array<string | null> = [];
+
+  const result = await runDigestCompose(
+    {
+      trigger: "manual",
+    },
+    {
+      appEnv: {
+        digestMaxLookbackHours: 48,
+        digestSendHour: 8,
+        digestTimeZone: "Asia/Shanghai",
+      },
+      async collectDigestRows() {
+        return [
+          createRow({
+            analysisRecordId: "analysis-current-report",
+            contentId: "content-current-report",
+            contentTitle: "Current Draft Content",
+            originalUrl: "https://example.com/current-draft",
+            valueScore: 9,
+          }),
+          createRow({
+            analysisRecordId: "analysis-already-used",
+            contentId: "content-already-used",
+            contentTitle: "Already Used Content",
+            originalUrl: "https://example.com/already-used",
+            valueScore: 10,
+          }),
+          createRow({
+            analysisRecordId: "analysis-fresh",
+            contentId: "content-fresh",
+            contentTitle: "Fresh Content",
+            originalUrl: "https://example.com/fresh",
+            valueScore: 8,
+          }),
+        ];
+      },
+      async findDigestReportByDate() {
+        return createDigestReport({
+          id: "digest-draft-current",
+          sentAt: null,
+          status: "ready",
+        });
+      },
+      async findLatestSentDigestReport() {
+        return createDigestReport({
+          id: "digest-sent-prev",
+          sentAt: new Date("2026-03-30T00:00:00.000Z"),
+          status: "sent",
+        });
+      },
+      async listConsumedDigestContentIds(reusableDigestId) {
+        receivedReusableDigestIds.push(reusableDigestId);
+        return new Set(["content-already-used"]);
+      },
+      now() {
+        return new Date("2026-03-31T00:30:00.000Z");
+      },
+      async persistDigest(input) {
+        persistedDigests.push(input as Record<string, unknown>);
+        return "digest-draft-current";
+      },
+      renderMarkdown() {
+        return "# digest markdown";
+      },
+    },
+  );
+
+  expect(receivedReusableDigestIds).toEqual(["digest-draft-current"]);
+  expect(result.payload).toMatchObject({
+    digestDate: "2026-03-31",
+    digestId: "digest-draft-current",
+    itemCount: 2,
+    reusedExistingDigest: true,
+  });
+  expect(persistedDigests[0]?.digestCandidate).toMatchObject({
+    items: [
+      {
+        contentId: "content-current-report",
+      },
+      {
+        contentId: "content-fresh",
+      },
+    ],
+  });
 });

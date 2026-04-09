@@ -103,6 +103,7 @@ export type DigestComposeDeps = {
   collectDigestRows?: (windowStart: Date, windowEnd: Date) => Promise<DigestComposeRow[]>;
   findDigestReportByDate?: (digestDate: string) => Promise<DigestReportRecord | null>;
   findLatestSentDigestReport?: () => Promise<DigestReportRecord | null>;
+  listConsumedDigestContentIds?: (reusableDigestId: string | null) => Promise<Set<string>>;
   now?: () => Date;
   persistDigest?: (input: PersistDigestInput) => Promise<string>;
   renderMarkdown?: (input: { digestDate: string; sections: DigestRenderSection[] }) => string;
@@ -184,21 +185,36 @@ function sortDigestItems(left: DigestSectionItem, right: DigestSectionItem): num
  * 4. 同一篇内容若有多次分析，取最新的一条。
  * 5. 按主分类分组。
  */
-function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidate {
+function selectDigestCandidates(
+  rows: DigestComposeRow[],
+  consumedContentIds: ReadonlySet<string> = new Set(),
+): DigestComposeCandidate {
   const latestByContentId = new Map<string, DigestSectionItem>();
+  let skippedBlockedCount = 0;
+  let skippedConsumedCount = 0;
+  let skippedIncompleteCount = 0;
+  let skippedMissingMetadataCount = 0;
 
   logger.info("Selecting digest candidates from rows", { rowCount: rows.length });
 
   for (const row of rows) {
     if (row.sourceStatus === "blocked") {
+      skippedBlockedCount += 1;
+      continue;
+    }
+
+    if (consumedContentIds.has(row.contentId)) {
+      skippedConsumedCount += 1;
       continue;
     }
 
     if (!hasRenderableSummary(row.summary)) {
+      skippedIncompleteCount += 1;
       continue;
     }
 
     if (!row.sourceName.trim() || !row.originalUrl.trim()) {
+      skippedMissingMetadataCount += 1;
       continue;
     }
 
@@ -242,7 +258,12 @@ function selectDigestCandidates(rows: DigestComposeRow[]): DigestComposeCandidat
 
   logger.info("Digest selection completed", {
     candidateCount: items.length,
+    consumedContentCount: consumedContentIds.size,
     sectionCount: sections.length,
+    skippedBlockedCount,
+    skippedConsumedCount,
+    skippedIncompleteCount,
+    skippedMissingMetadataCount,
   });
 
   return {
@@ -272,6 +293,27 @@ async function findDigestReportByDate(digestDate: string): Promise<DigestReportR
     .where(and(eq(digestReports.period, "daily"), eq(digestReports.digestDate, digestDate)));
 
   return record ?? null;
+}
+
+async function listConsumedDigestContentIds(reusableDigestId: string | null): Promise<Set<string>> {
+  const db = getDb();
+  const whereClause = reusableDigestId ? ne(digestItems.digestId, reusableDigestId) : undefined;
+  const rows = await db
+    .select({
+      contentId: analysisRecords.contentId,
+    })
+    .from(digestItems)
+    .innerJoin(analysisRecords, eq(analysisRecords.id, digestItems.analysisRecordId))
+    .where(whereClause);
+
+  const consumedContentIds = new Set(rows.map((row) => row.contentId));
+
+  logger.info("Loaded consumed digest content ids", {
+    consumedContentCount: consumedContentIds.size,
+    reusableDigestId,
+  });
+
+  return consumedContentIds;
 }
 
 /** 收集窗口内所有符合条件的分析记录 */
@@ -370,6 +412,7 @@ function buildDigestDeps(overrides: DigestComposeDeps): Required<DigestComposeDe
     collectDigestRows: overrides.collectDigestRows ?? collectDigestRows,
     findDigestReportByDate: overrides.findDigestReportByDate ?? findDigestReportByDate,
     findLatestSentDigestReport: overrides.findLatestSentDigestReport ?? findLatestSentDigestReport,
+    listConsumedDigestContentIds: overrides.listConsumedDigestContentIds ?? listConsumedDigestContentIds,
     now: overrides.now ?? (() => new Date()),
     persistDigest: overrides.persistDigest ?? persistDigest,
     renderMarkdown: overrides.renderMarkdown ?? renderDigestMarkdown,
@@ -461,7 +504,8 @@ export async function runDigestCompose(
 
   // 3. 执行核心编排
   const collectedRows = await deps.collectDigestRows(windowStart, windowEnd);
-  const digestCandidate = selectDigestCandidates(collectedRows);
+  const consumedContentIds = await deps.listConsumedDigestContentIds(existingReport?.id ?? null);
+  const digestCandidate = selectDigestCandidates(collectedRows, consumedContentIds);
 
   // 4. 渲染 Markdown
   const markdownBody = deps.renderMarkdown({
