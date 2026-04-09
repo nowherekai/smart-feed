@@ -201,6 +201,7 @@ test("runDigestCompose skips when the current digest date has already been sent"
 
 test("runDigestCompose excludes content already assigned to another digest and reuses current draft digest id", async () => {
   const persistedDigests: Array<Record<string, unknown>> = [];
+  const receivedCandidateContentIds: Array<readonly string[]> = [];
   const receivedReusableDigestIds: Array<string | null> = [];
 
   const result = await runDigestCompose(
@@ -252,7 +253,8 @@ test("runDigestCompose excludes content already assigned to another digest and r
           status: "sent",
         });
       },
-      async listConsumedDigestContentIds(reusableDigestId) {
+      async listConsumedDigestContentIds(candidateContentIds, reusableDigestId) {
+        receivedCandidateContentIds.push(candidateContentIds);
         receivedReusableDigestIds.push(reusableDigestId);
         return new Set(["content-already-used"]);
       },
@@ -269,6 +271,7 @@ test("runDigestCompose excludes content already assigned to another digest and r
     },
   );
 
+  expect(receivedCandidateContentIds).toEqual([["content-current-report", "content-already-used", "content-fresh"]]);
   expect(receivedReusableDigestIds).toEqual(["digest-draft-current"]);
   expect(result.payload).toMatchObject({
     digestDate: "2026-03-31",

@@ -4,7 +4,7 @@
  * 包含：动态统计窗口计算、多条件内容筛选（时间、评分、摘要完整性）、内容自动分组、Markdown 渲染及数据库事务持久化。
  */
 
-import { and, desc, eq, gte, lte, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, ne } from "drizzle-orm";
 
 import { type AppEnv, getAppEnv } from "../config";
 import { type AnalysisSummary, analysisRecords, contentItems, digestItems, digestReports, getDb, sources } from "../db";
@@ -103,7 +103,10 @@ export type DigestComposeDeps = {
   collectDigestRows?: (windowStart: Date, windowEnd: Date) => Promise<DigestComposeRow[]>;
   findDigestReportByDate?: (digestDate: string) => Promise<DigestReportRecord | null>;
   findLatestSentDigestReport?: () => Promise<DigestReportRecord | null>;
-  listConsumedDigestContentIds?: (reusableDigestId: string | null) => Promise<Set<string>>;
+  listConsumedDigestContentIds?: (
+    candidateContentIds: readonly string[],
+    reusableDigestId: string | null,
+  ) => Promise<Set<string>>;
   now?: () => Date;
   persistDigest?: (input: PersistDigestInput) => Promise<string>;
   renderMarkdown?: (input: { digestDate: string; sections: DigestRenderSection[] }) => string;
@@ -295,20 +298,33 @@ async function findDigestReportByDate(digestDate: string): Promise<DigestReportR
   return record ?? null;
 }
 
-async function listConsumedDigestContentIds(reusableDigestId: string | null): Promise<Set<string>> {
+async function listConsumedDigestContentIds(
+  candidateContentIds: readonly string[],
+  reusableDigestId: string | null,
+): Promise<Set<string>> {
+  if (candidateContentIds.length === 0) {
+    return new Set();
+  }
+
   const db = getDb();
-  const whereClause = reusableDigestId ? ne(digestItems.digestId, reusableDigestId) : undefined;
+  const whereConditions = [inArray(analysisRecords.contentId, [...candidateContentIds])];
+
+  if (reusableDigestId) {
+    whereConditions.push(ne(digestItems.digestId, reusableDigestId));
+  }
+
   const rows = await db
     .select({
       contentId: analysisRecords.contentId,
     })
     .from(digestItems)
     .innerJoin(analysisRecords, eq(analysisRecords.id, digestItems.analysisRecordId))
-    .where(whereClause);
+    .where(and(...whereConditions));
 
   const consumedContentIds = new Set(rows.map((row) => row.contentId));
 
   logger.info("Loaded consumed digest content ids", {
+    candidateContentCount: candidateContentIds.length,
     consumedContentCount: consumedContentIds.size,
     reusableDigestId,
   });
@@ -504,7 +520,8 @@ export async function runDigestCompose(
 
   // 3. 执行核心编排
   const collectedRows = await deps.collectDigestRows(windowStart, windowEnd);
-  const consumedContentIds = await deps.listConsumedDigestContentIds(existingReport?.id ?? null);
+  const candidateContentIds = [...new Set(collectedRows.map((row) => row.contentId))];
+  const consumedContentIds = await deps.listConsumedDigestContentIds(candidateContentIds, existingReport?.id ?? null);
   const digestCandidate = selectDigestCandidates(collectedRows, consumedContentIds);
 
   // 4. 渲染 Markdown
