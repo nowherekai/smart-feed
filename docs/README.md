@@ -44,6 +44,7 @@
 | [030](changes/arch/030_sources-page-rss-opml-export.md) | 2026-04-07 | Sources 页面全量 RSS OPML 导出 |
 | [031](changes/arch/031_ops-insights-admin-page.md) | 2026-04-07 | Ops Insights 管理页与运行聚合视图 |
 | [032](changes/arch/032_digest-archive-web-interface.md) | 2026-04-09 | 新增 Digest Reports 网页归档 |
+| [033](changes/arch/033_digest-archive-structured-markdown-rendering.md) | 2026-04-11 | Digest Archive 结构化 Markdown 渲染 |
 
 ### 运维变更
 

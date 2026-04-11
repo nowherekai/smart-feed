@@ -1,8 +1,8 @@
 import { ArrowLeft, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
-import { marked } from "marked";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDigestArchiveDetail } from "@/app/actions/digest-archive-actions";
+import { DigestMarkdownContent } from "@/components/features/digest-markdown-content";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -36,12 +36,17 @@ export default async function DigestArchiveDetailPage({ params }: DigestArchiveD
 
   const detail = await getDigestArchiveDetail(date);
 
-  if (!detail?.current.markdownBody) {
+  if (!detail) {
     notFound();
   }
 
   const { current, prevDate, nextDate } = detail;
-  const htmlContent = marked.parse(current.markdownBody || "");
+
+  if (!current.markdownBody) {
+    notFound();
+  }
+
+  const markdownBody = current.markdownBody;
 
   return (
     <ScrollArea className="flex-1 w-full h-full bg-background">
@@ -99,8 +104,7 @@ export default async function DigestArchiveDetailPage({ params }: DigestArchiveD
           <p className="text-muted-foreground">{formatDigestDate(date)}</p>
         </header>
 
-        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: Trusted markdown */}
-        <div className="prose-custom pb-20" dangerouslySetInnerHTML={{ __html: htmlContent as string }} />
+        <DigestMarkdownContent markdown={markdownBody} />
       </div>
     </ScrollArea>
   );

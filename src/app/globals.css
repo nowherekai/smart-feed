@@ -144,42 +144,42 @@
     @apply text-foreground leading-relaxed;
   }
   .prose-custom h1 {
-    @apply text-3xl font-bold mt-10 mb-6 pb-2 border-b border-border/50;
+    @apply mt-0 mb-8 border-b border-border/60 pb-4 text-3xl font-bold;
   }
   .prose-custom h2 {
-    @apply text-2xl font-semibold mt-10 mb-5 pb-2 border-b border-border/40;
+    @apply mt-12 mb-6 text-2xl font-semibold;
   }
   .prose-custom h3 {
-    @apply text-xl font-semibold mt-8 mb-4;
+    @apply mt-8 mb-4 text-[1.75rem] font-semibold;
   }
   .prose-custom p {
-    @apply my-5 leading-7;
+    @apply my-4 text-[1.0625rem] leading-8;
   }
   .prose-custom ul {
-    @apply list-disc list-inside my-5 space-y-2;
+    @apply my-5 ml-6 list-disc space-y-2;
   }
   .prose-custom ol {
-    @apply list-decimal list-inside my-5 space-y-2;
+    @apply my-5 ml-6 list-decimal space-y-2;
   }
   .prose-custom li {
-    @apply leading-7;
+    @apply pl-1 text-[1.0625rem] leading-8;
   }
   .prose-custom a {
-    @apply text-primary hover:underline font-medium;
+    @apply font-medium text-primary underline-offset-4 hover:underline;
   }
   .prose-custom blockquote {
-    @apply border-l-4 border-primary/50 pl-4 py-1 my-6 italic text-muted-foreground bg-muted/30 rounded-r-lg;
+    @apply my-6 rounded-r-xl border-l-4 border-primary/60 bg-muted/25 py-3 pr-4 pl-5 text-foreground;
   }
   .prose-custom code {
-    @apply bg-muted px-1.5 py-0.5 rounded-md text-sm font-mono text-primary/80;
+    @apply rounded-md bg-muted px-1.5 py-0.5 font-mono text-sm text-primary/80;
   }
   .prose-custom pre {
-    @apply bg-muted/50 p-4 rounded-lg overflow-x-auto my-6 border border-border/50;
+    @apply my-6 overflow-x-auto rounded-lg border border-border/50 bg-muted/50 p-4;
   }
   .prose-custom pre code {
     @apply bg-transparent p-0 text-foreground;
   }
   .prose-custom hr {
-    @apply my-10 border-border/50;
+    @apply my-10 border-border/60;
   }
 }
